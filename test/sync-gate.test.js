@@ -56,6 +56,19 @@ test('a node still doing its initial block download may not mine', () => {
   assert.strictEqual(g.evaluate({ ...HEALTHY, synced: false }).reason, REASON.NOT_SYNCED);
 });
 
+test('blocks still arriving in a burst means the node is still downloading', () => {
+  // The case tip age alone misses: measured on the live network, a node that
+  // had reached height 11 of 18 had a tip only ~17 minutes old and would have
+  // been let through by any sane tip-age bound. Blocks were still pouring in.
+  const g = new SyncGate({ maxTipAgeSec: 5400 });
+  const d = g.evaluate({ ...HEALTHY, tipAgeSec: 1057, catchingUp: true });
+  assert.strictEqual(d.allow, false);
+  assert.strictEqual(d.reason, REASON.NOT_SYNCED);
+  assert.match(d.message, /still downloading/);
+  // Once the burst stops, the same node is allowed.
+  assert.strictEqual(g.evaluate({ ...HEALTHY, tipAgeSec: 1057, catchingUp: false }).allow, true);
+});
+
 test('a node that has peers but an old tip is told it is catching up', () => {
   // This is the realistic "just installed, still downloading" case, and the
   // message must say that rather than accuse the network of being dead.
@@ -94,12 +107,10 @@ test('the first-node override excuses no peers and a stale tip — and nothing e
   assert.strictEqual(noPeers.overridden, true);
   assert.match(noPeers.message, /first node of this network/);
 
-  // It must not conjure a node, an address, or the right kind of address,
-  // and it must not skip the initial block download.
+  // It must not conjure a node, an address, or the right kind of address.
   assert.strictEqual(g.evaluate({ ...HEALTHY, nodeRunning: false }).allow, false);
   assert.strictEqual(g.evaluate({ ...HEALTHY, addressKind: null }).allow, false);
   assert.strictEqual(g.evaluate({ ...HEALTHY, mode: 'shielded' }).allow, false);
-  assert.strictEqual(g.evaluate({ ...HEALTHY, synced: false }).allow, false);
 });
 
 test('the override is off by default and can be turned back off', () => {

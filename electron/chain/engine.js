@@ -30,6 +30,8 @@ const { requireBinary } = require('./binaries');
 const TICK_MS = 1000;
 const SCAN_BUDGET_PER_TICK = 25;   // blocks re-checked per tick by the backstop scan
 const IDLE_THRESHOLD_S = 120;      // "pause while I'm using the machine"
+const CATCHUP_WINDOW_MS = 30000;   // how far back the catching-up check looks
+const CATCHUP_BLOCKS = 2;          // blocks in that window that mean "still downloading"
 
 class ChainEngine extends EventEmitter {
   /**
@@ -83,8 +85,11 @@ class ChainEngine extends EventEmitter {
     this.chain = {
       height: null, bestHash: null, tipTimeUnix: null, tipAgeSec: null,
       peersIn: 0, peersOut: 0, peers: 0, verificationProgress: null,
-      networkSolps: null, difficulty: null, stateBytes: null, synced: null
+      networkSolps: null, difficulty: null, stateBytes: null, synced: null,
+      estimatedHeight: null, catchingUp: false, blocksGainedRecently: 0
     };
+    // Recent (timestamp, height) samples, used to spot an initial download.
+    this.heightHistory = [];
 
     this.mining = { on: false, mode: this.settings.miningMode === 'shielded' ? 'shielded' : 'standard', startedAt: null, pausedByGate: false, pausedByIdle: false };
     // Drives internal_miner in the generated config. Kept separate from
@@ -448,6 +453,7 @@ class ChainEngine extends EventEmitter {
       peers: this.chain.peers,
       tipAgeSec: this.chain.tipAgeSec,
       addressKind: this.address.kind,
+      catchingUp: this.chain.catchingUp === true,
       mode: this.mining.mode
     });
   }
@@ -622,12 +628,32 @@ class ChainEngine extends EventEmitter {
       this.chain.networkSolps = Number.isFinite(v) && v > 0 ? v : null;
     } catch { /* keep the previous value */ }
 
-    // "Synced" for the UI: this node has peers AND the block it holds is
-    // recent. Null while we cannot tell. No wall-clock extrapolation.
+    // Are blocks still arriving in a burst? During an initial download a node
+    // pulls blocks far faster than the network makes them (75 s apart here),
+    // so several in half a minute means "still catching up" no matter how
+    // fresh the newest block looks. This is the only catching-up signal that
+    // is observed rather than extrapolated — see the note in sync-gate.js.
+    if (Number.isInteger(this.chain.height)) {
+      const now = Date.now();
+      this.heightHistory.push({ t: now, h: this.chain.height });
+      while (this.heightHistory.length && now - this.heightHistory[0].t > CATCHUP_WINDOW_MS) this.heightHistory.shift();
+      const oldest = this.heightHistory[0];
+      const gained = oldest ? this.chain.height - oldest.h : 0;
+      this.chain.blocksGainedRecently = gained;
+      // No "has the window filled yet" condition on purpose: gaining several
+      // blocks in the first seconds after start is the clearest possible sign
+      // of an initial download, and that is exactly when it must be caught.
+      // The network itself makes a block every ~75 s, so two blocks inside
+      // half a minute is never normal chain progress.
+      this.chain.catchingUp = gained >= CATCHUP_BLOCKS;
+    }
+
+    // "Up to date, as far as this node can tell": it has peers, blocks have
+    // stopped arriving in a burst, and the newest block is not old. It is
+    // never a claim of certainty — no peer on this network reports its height.
     const minPeers = this.gate.minPeers;
-    if (this.chain.peers < minPeers) this.chain.synced = null;
-    else if (!Number.isFinite(this.chain.tipAgeSec)) this.chain.synced = null;
-    else this.chain.synced = this.chain.tipAgeSec <= this.gate.maxTipAgeSec;
+    if (this.chain.peers < minPeers || !Number.isFinite(this.chain.tipAgeSec)) this.chain.synced = null;
+    else this.chain.synced = !this.chain.catchingUp && this.chain.tipAgeSec <= this.gate.maxTipAgeSec;
   }
 
   idleGate() {
@@ -704,6 +730,8 @@ class ChainEngine extends EventEmitter {
         peersIn: this.chain.peersIn,
         peersOut: this.chain.peersOut,
         synced: this.chain.synced,
+        catchingUp: this.chain.catchingUp === true,
+        blocksGainedRecently: this.chain.blocksGainedRecently,
         verificationProgress: this.chain.verificationProgress,
         stateBytes: this.chain.stateBytes,
         dataDir: this.dataDir,

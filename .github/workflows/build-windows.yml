@@ -1,0 +1,251 @@
+name: Build Windows installer
+
+# Produces everything a person needs to install SWARM Node, and nothing else:
+#   SWARM-Node-<version>-win-x64.exe   NSIS installer
+#   SWARM-Node-<version>-win-x64.zip   portable, no installation
+#   SHA256SUMS                         checksums for both
+#   release-manifest.json              what went into this build
+#
+# It does NOT publish a GitHub Release. Publishing is one command once the
+# planner has audited the artifacts:
+#   gh release create v<version> SWARM-Node-*.exe SWARM-Node-*.zip SHA256SUMS \
+#     release-manifest.json -R brs-holding/swarm-node --notes-file RELEASE-NOTES.md
+
+on:
+  workflow_dispatch:
+    inputs:
+      zebrad_run_id:
+        description: 'privacy-zebra run id holding the Windows zebrad artifact'
+        required: false
+        default: '35603263833'
+      tools_run_id:
+        description: 'privacy-zebra run id holding swarm-tools (privacy-miner.exe)'
+        required: false
+        default: '35626325459'
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md']
+
+permissions:
+  contents: read
+  actions: read          # needed to download artifacts from the public privacy-zebra repo
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # ---- the two binaries this app runs -------------------------------
+      # They are built in brs-holding/privacy-zebra, from the official Zebra
+      # source with no source changes, and downloaded here rather than rebuilt,
+      # so the thing that ships is the thing that was tested.
+      - name: Download zebrad from privacy-zebra
+        id: zebrad
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $runId = "${{ github.event.inputs.zebrad_run_id }}"
+          if (-not $runId) { $runId = "35603263833" }
+          New-Item -ItemType Directory -Force staging/zebrad | Out-Null
+          gh run download $runId -R brs-holding/privacy-zebra -n "zebrad-x86_64-pc-windows-msvc" -D staging/zebrad
+          Get-ChildItem -Recurse staging/zebrad | Select-Object FullName, Length
+
+      - name: Download privacy-miner from privacy-zebra
+        id: miner
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $runId = "${{ github.event.inputs.tools_run_id }}"
+          if (-not $runId) { $runId = "35626325459" }
+          New-Item -ItemType Directory -Force staging/tools | Out-Null
+          gh run download $runId -R brs-holding/privacy-zebra -n "swarm-tools-x86_64-pc-windows-msvc" -D staging/tools
+          Get-ChildItem -Recurse staging/tools | Select-Object FullName, Length
+
+      # A cross-repository artifact download needs `actions: read` on the
+      # source repo. privacy-zebra is public, so the job token normally has it;
+      # if a future policy change removes that, upload the two binaries as a
+      # workflow artifact of THIS repo named "vendored-binaries" and re-run —
+      # the step below picks that up instead, and everything after it is
+      # identical because the SHA-256 check is what decides.
+      - name: Fall back to a vendored upload
+        if: steps.zebrad.outcome != 'success' || steps.miner.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Write-Host "::warning::cross-repo artifact download failed; trying the vendored-binaries artifact of this repository"
+          New-Item -ItemType Directory -Force staging/vendored | Out-Null
+          gh run download -R ${{ github.repository }} -n "vendored-binaries" -D staging/vendored
+          Get-ChildItem -Recurse staging/vendored | Select-Object FullName, Length
+
+      - name: Collect and verify the binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force resources/bin | Out-Null
+
+          function Find-One($name) {
+            $hit = Get-ChildItem -Path staging -Recurse -Filter $name -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+            if (-not $hit) { throw "$name was not found in any downloaded artifact" }
+            return $hit.FullName
+          }
+
+          # Some artifacts are zipped; expand anything that looks like one first.
+          Get-ChildItem -Path staging -Recurse -Filter *.zip -ErrorAction SilentlyContinue | ForEach-Object {
+            $dest = Join-Path $_.DirectoryName ($_.BaseName + '_x')
+            Expand-Archive -LiteralPath $_.FullName -DestinationPath $dest -Force
+          }
+
+          Copy-Item (Find-One 'zebrad.exe') resources/bin/zebrad.exe -Force
+          Copy-Item (Find-One 'privacy-miner.exe') resources/bin/privacy-miner.exe -Force
+
+          # swarm-keytool.exe creates spending keys. It must never leave the
+          # build machine inside a miner. Make that impossible, not unlikely.
+          Get-ChildItem -Path resources/bin -Filter '*keytool*' -ErrorAction SilentlyContinue | ForEach-Object {
+            throw "refusing to package $($_.Name)"
+          }
+
+          $expected = @{
+            'zebrad.exe'        = 'b6ea39096b99debd64b248789d47c8a3a94afea5541e3a75f896b552ac61c477'
+            'privacy-miner.exe' = 'e6e16810e5f01688a668d80d11be689c278d2df3b3c5d35d25667b668c35123a'
+          }
+          foreach ($name in $expected.Keys) {
+            $actual = (Get-FileHash "resources/bin/$name" -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $expected[$name]) {
+              throw "$name sha256 $actual does not match the pinned $($expected[$name])"
+            }
+            Write-Host "$name sha256 $actual OK"
+          }
+
+      # A clean Windows install has no Visual C++ 2015-2022 runtime, and zebrad
+      # will not start without it. Shipping the three DLLs next to the binaries
+      # means the installer needs no separate redistributable and no admin step.
+      - name: Copy the VC++ runtime DLLs app-locally
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $needed = @('VCRUNTIME140.dll', 'VCRUNTIME140_1.dll', 'MSVCP140.dll')
+          $roots = @(
+            "${env:ProgramFiles}\Microsoft Visual Studio\2022",
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2026",
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2026"
+          ) | Where-Object { Test-Path $_ }
+
+          $found = @{}
+          foreach ($root in $roots) {
+            Get-ChildItem -Path $root -Recurse -Directory -Filter 'x64' -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'Redist\\MSVC' } |
+              ForEach-Object {
+                foreach ($dll in $needed) {
+                  if ($found.ContainsKey($dll)) { continue }
+                  $hit = Get-ChildItem -Path $_.FullName -Recurse -Filter $dll -ErrorAction SilentlyContinue |
+                         Select-Object -First 1
+                  if ($hit) { $found[$dll] = $hit.FullName }
+                }
+              }
+          }
+          # Last resort: the copies Windows itself carries.
+          foreach ($dll in $needed) {
+            if (-not $found.ContainsKey($dll)) {
+              $sys = Join-Path $env:SystemRoot "System32\$dll"
+              if (Test-Path $sys) { $found[$dll] = $sys }
+            }
+          }
+          foreach ($dll in $needed) {
+            if (-not $found.ContainsKey($dll)) { throw "could not find $dll on the runner" }
+            Copy-Item $found[$dll] "resources/bin/$dll" -Force
+            Write-Host "$dll <- $($found[$dll])"
+          }
+
+      - name: Record the binary hashes this build may run
+        run: node scripts/make-binaries-manifest.mjs
+
+      - name: Build the renderer
+        run: npm run build:ui
+
+      - name: Build the installer and the portable zip
+        run: npx electron-builder --win --publish never
+
+      - name: Checksums and release manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $net     = Get-Content electron/net/network.json -Raw | ConvertFrom-Json
+          $bins    = Get-Content electron/net/binaries.json -Raw | ConvertFrom-Json
+
+          New-Item -ItemType Directory -Force out | Out-Null
+          Get-ChildItem release -Include *.exe, *.zip -Recurse -File |
+            Where-Object { $_.Name -notlike '*.blockmap' } |
+            ForEach-Object { Copy-Item $_.FullName (Join-Path 'out' $_.Name) -Force }
+
+          $files = Get-ChildItem out -File | Sort-Object Name
+          $lines = foreach ($f in $files) {
+            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h *$($f.Name)"
+          }
+          [IO.File]::WriteAllText("out/SHA256SUMS", ($lines -join "`n") + "`n", (New-Object Text.UTF8Encoding $false))
+
+          $manifest = [ordered]@{
+            product          = 'SWARM Node'
+            version          = $version
+            built_at_utc     = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            git_commit       = '${{ github.sha }}'
+            git_ref          = '${{ github.ref }}'
+            workflow_run     = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            runner_image     = "${env:ImageOS}"
+            signed           = $false
+            signing_note     = 'Unsigned. Windows SmartScreen will warn. See RELEASE-NOTES.md.'
+            auto_update      = $false
+            app_id           = 'green.swarm.node'
+            network          = [ordered]@{
+              name    = $net.identity.network_name
+              magic   = $net.identity.network_magic
+              genesis = $net.genesis.hash
+              p2p     = $net.ports.public_p2p
+              seeds   = $net.seed_peers
+              ticker  = $net.identity.ticker
+            }
+            bundled_binaries = $bins
+            files            = @($files | ForEach-Object {
+              [ordered]@{
+                name   = $_.Name
+                bytes  = $_.Length
+                sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+              }
+            })
+          }
+          $json = $manifest | ConvertTo-Json -Depth 8
+          [IO.File]::WriteAllText("out/release-manifest.json", $json, (New-Object Text.UTF8Encoding $false))
+
+          Get-Content out/SHA256SUMS
+          Write-Host "--- release-manifest.json ---"
+          Get-Content out/release-manifest.json
+
+      - name: Upload the installer, the zip and the checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-node-windows-x64
+          path: out/**
+          if-no-files-found: error
+          retention-days: 30

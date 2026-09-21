@@ -164,6 +164,8 @@ function registerIpc() {
     network: manifest.identity,
     networkSource: manifest._source,
     links,
+    contactEmail: manifest.contact_email || null,
+    channelsNote: manifest.channels_note || null,
     status: manifest.status,
     updatesEnabled: false
   }));

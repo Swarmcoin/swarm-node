@@ -33,7 +33,8 @@ const REASON = {
 
 const MESSAGES = {
   [REASON.NO_NODE]: 'The full node is not running yet. Mining needs a running node.',
-  [REASON.NOT_SYNCED]: 'The node is still downloading the chain. Mining starts once it has caught up.',
+  [REASON.NOT_SYNCED]:
+    'Your node is still downloading blocks from the network. Mining starts once it has caught up.',
   [REASON.NO_PEERS]:
     'This node has no peers, so it cannot tell whether it is on the real chain. ' +
     'Mining now would build a private fork that everyone else throws away. ' +
@@ -48,17 +49,35 @@ const MESSAGES = {
   [REASON.OK]: 'Ready to mine.'
 };
 
-// WHY THERE IS NO "estimatedheight" CHECK HERE.
-// Zebra's getblockchaininfo.estimatedheight is a WALL-CLOCK extrapolation:
-// roughly (now - genesis time) / target spacing. On a chain that has just been
-// created, with a genesis timestamped in the past, it claims the chain "should"
-// already be thousands of blocks high, so a perfectly healthy node looks
-// permanently unsynced. Measured on 2026-09-21: a fresh node at height 0 with a
-// genesis 1.7 days old reported estimatedheight ~1994 and would never have been
-// allowed to mine.
-// The honest signals are the two below: does this node have peers, and is the
-// block it has fresh. A node that is behind the network has an old tip by
-// definition, so tip age covers the catching-up case without inventing one.
+// WHAT THIS GATE CAN AND CANNOT KNOW.
+//
+// It would be ideal to ask "how high is the chain according to my peers?" and
+// compare. That answer does not exist on this network:
+//   * getpeerinfo returns addr, services, version, ping and connection state.
+//     It carries no peer height (verified against a live SwarmTestnet peer on
+//     2026-09-21).
+//   * getblockchaininfo.estimatedheight LOOKS like the answer and is not. In
+//     zebra-chain/src/chain_tip.rs, estimate_distance_to_network_chain_tip
+//     extrapolates from THIS node's own tip block time and the target spacing.
+//     It is tip age in different units, not information from anybody else. On a
+//     chain created minutes ago with a genesis timestamped 1.7 days earlier it
+//     reported ~1994 blocks missing, which would have blocked a healthy node
+//     from mining for ever.
+//
+// So the gate is built on the three things that ARE observed:
+//   1. peer count            — nobody to check against is the dangerous case;
+//   2. tip age               — a node deep in its initial download has an old tip;
+//   3. blocks still arriving — during an initial download blocks arrive in a
+//      burst, far faster than the network makes them. Several blocks in the
+//      last half minute means this node is still catching up, whatever its tip
+//      age says.
+//
+// Signal 3 matters because 2 alone is not enough: measured on the live network,
+// a node that had reached height 11 of 18 had a tip only ~17 minutes old, which
+// any sane tip-age bound would have accepted. It was still visibly downloading.
+//
+// None of this is certainty, and the UI does not claim certainty. It says what
+// the node can see.
 
 // What each mining mode needs from the payout address, as reported by the
 // node itself (see chain/address.js — this app never parses an address).
@@ -105,18 +124,20 @@ class SyncGate {
       reason = REASON.NO_ADDRESS;
     } else if (obs.addressKind !== MODE_REQUIRES[mode]) {
       reason = REASON.MODE_MISMATCH;
-    } else if (obs.synced === false) {
-      reason = REASON.NOT_SYNCED;
     } else if (!Number.isFinite(obs.peers) || obs.peers < this.minPeers) {
       reason = REASON.NO_PEERS;
+    } else if (obs.catchingUp === true || obs.synced === false) {
+      // Blocks are still arriving faster than the network makes them.
+      reason = REASON.NOT_SYNCED;
     } else if (!Number.isFinite(obs.tipAgeSec) || obs.tipAgeSec > this.maxTipAgeSec) {
       reason = REASON.STALE_TIP;
     }
 
-    // The override only excuses the two *network health* reasons. It can never
-    // conjure a node, a payout address, or an address of the right kind, and it
-    // never skips the node's own initial block download.
-    const overridable = reason === REASON.NO_PEERS || reason === REASON.STALE_TIP;
+    // The override excuses only the three *network health* reasons. It can
+    // never conjure a node, a payout address, or an address of the right kind.
+    // NOT_SYNCED is included because a brand-new network trips it too.
+    const overridable =
+      reason === REASON.NO_PEERS || reason === REASON.STALE_TIP || reason === REASON.NOT_SYNCED;
     const overridden = this.firstNode && overridable;
     if (overridden) reason = REASON.OK;
 

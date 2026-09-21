@@ -425,21 +425,57 @@ export function SettingsView({ s, cfg, api }) {
       </div>
 
       <div className="card">
-        <h3>SWARM</h3>
-        <div className="row wrap" style={{ marginTop: 6 }}>
-          {Object.entries(cfg.links || {})
-            .filter(([, u]) => typeof u === 'string' && u.startsWith('https://'))
-            .map(([k, u]) => (
-              <button key={k} className="btn sm ghost" onClick={() => window.shell.openLink(u)}>
-                <span className="row" style={{ gap: 6 }}><Icon name="external" size={14} />{k.replace(/_/g, ' ')}</span>
-              </button>
+        <h3>Official SWARM channels</h3>
+        <p className="small muted">
+          These are the only places the project speaks from. There is no Discord and no Telegram.
+          Anything else claiming to be SWARM is not.
+        </p>
+        <table className="tbl" style={{ marginTop: 6 }}>
+          <tbody>
+            {LINK_LABELS.filter(([k]) => cfg.links && cfg.links[k]).map(([k, label]) => (
+              <tr key={k}>
+                <td className="muted">{label}</td>
+                <td style={{ textAlign: 'right' }}>
+                  <button className="btn sm ghost" onClick={() => window.shell.openLink(cfg.links[k])}>
+                    <span className="row" style={{ gap: 6 }}>
+                      <span className="mono">{cfg.links[k].replace(/^https:\/\//, '')}</span>
+                      <Icon name="external" size={13} />
+                    </span>
+                  </button>
+                </td>
+              </tr>
             ))}
+            {cfg.contactEmail ? (
+              <tr>
+                <td className="muted">Email</td>
+                <td style={{ textAlign: 'right' }}>
+                  <button className="btn sm ghost" onClick={() => window.shell.copy(cfg.contactEmail)}>
+                    <span className="mono">{cfg.contactEmail}</span>
+                  </button>
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+        <div style={{ marginTop: 14 }}>
+          <Notice kind="warn">
+            SWARM will never ask you for a recovery phrase, a private key or a payment — not by
+            email, not on any website, not in this app. This app has no way to accept one.
+          </Notice>
         </div>
         <p className="tiny dim" style={{ marginTop: 12, marginBottom: 0 }}>{s.network.status}</p>
       </div>
     </div>
   );
 }
+
+// Only these links exist, and the main process enforces the same allow-list.
+const LINK_LABELS = [
+  ['website', 'Website'],
+  ['explorer', 'Explorer'],
+  ['x', 'X'],
+  ['source', 'Source code']
+];
 
 // ---------------------------------------------------------------- log
 export function LogView({ lines }) {
