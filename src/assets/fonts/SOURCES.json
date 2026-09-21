@@ -1,0 +1,23 @@
+{
+  "note": "Bundled locally so the app makes no network request. All three faces are licensed under the SIL Open Font License 1.1.",
+  "license": "SIL Open Font License 1.1",
+  "fetched": "2026-09-21",
+  "subset": "latin",
+  "fonts": {
+    "Sora-Variable": {
+      "family": "Sora",
+      "url": "https://fonts.gstatic.com/s/sora/v17/xMQ9uFFYT72X5wkB_18qmnndmSdSnh2BAfO5mnuyOo1lfiQwV6-x.woff2",
+      "bytes": 25284
+    },
+    "Manrope-Variable": {
+      "family": "Manrope",
+      "url": "https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2",
+      "bytes": 24836
+    },
+    "JetBrainsMono-Variable": {
+      "family": "JetBrains Mono",
+      "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2",
+      "bytes": 31432
+    }
+  }
+}
