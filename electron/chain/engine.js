@@ -1,0 +1,856 @@
+// ChainEngine — the one object the Electron main process talks to.
+//
+// It owns the node, the miners, the sync gate and the reward ledger, and it
+// pushes one state object to the UI every second. It has no Electron import,
+// so the headless integration test drives exactly the same code the app runs.
+//
+// Rules it enforces, not suggestions:
+//   * nothing runs hidden: stopAll() leaves no child process behind, and the
+//     window closing calls it;
+//   * mining never starts while the sync gate is closed, and stops by itself
+//     when the gate closes under it;
+//   * no number reaches the UI that was not read from the chain, from a
+//     miner's own output, or measured on this machine.
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { EventEmitter } = require('events');
+
+const { ZebraNode } = require('./zebrad');
+const { ZebraRpc } = require('./rpc');
+const { MinerPool } = require('./miner');
+const { SyncGate, tipAgeSeconds, REASON } = require('./sync-gate');
+const { RewardLedger, coinbasePaidTo, parseMinedLine, splitSubsidy } = require('./rewards');
+const { validateWithNode } = require('./address');
+const { machineCheck } = require('./hardware');
+const { requireBinary } = require('./binaries');
+
+const TICK_MS = 1000;
+const SCAN_BUDGET_PER_TICK = 25;   // blocks re-checked per tick by the backstop scan
+const IDLE_THRESHOLD_S = 120;      // "pause while I'm using the machine"
+
+class ChainEngine extends EventEmitter {
+  /**
+   * @param {object} cfg
+   *   manifest    {object}  embedded network manifest
+   *   dataDir     {string}  per-user data directory
+   *   settings    {object}  persisted settings (see config-store.js)
+   *   saveSettings{function}
+   *   allowUnpinnedBinaries {boolean} development only
+   *   idleSeconds {function|null} returns system idle seconds (powerMonitor)
+   *   simulateStandardMiner {boolean} UI-test only, never mines
+   */
+  constructor(cfg) {
+    super();
+    this.manifest = cfg.manifest;
+    this.dataDir = cfg.dataDir;
+    this.settings = cfg.settings;
+    this.saveSettings = cfg.saveSettings || (() => {});
+    this.idleSeconds = cfg.idleSeconds || null;
+    this.allowUnpinned = cfg.allowUnpinnedBinaries === true;
+    this.simulateStandardMiner = cfg.simulateStandardMiner === true;
+
+    const gateCfg = this.manifest.sync_gate || {};
+    this.gate = new SyncGate({
+      minPeers: gateCfg.min_peers,
+      maxTipAgeSec: this.settings.maxTipAgeSeconds || gateCfg.max_tip_age_seconds,
+      firstNode: this.settings.firstNodeOverride === true
+    });
+
+    this.ledger = new RewardLedger({
+      maturity: (this.manifest.consensus || {}).coinbase_maturity_blocks,
+      recipients: (this.manifest.economics || {}).recipients || [],
+      atomicPerCoin: (this.manifest.economics || {}).atomic_unit_per_coin
+    });
+
+    const ports = this.manifest.ports || {};
+    this.rpcPort = Number(this.settings.rpcPort) || Number(ports.rpc);
+    // The canonical manifest calls it public_p2p; fixtures may say p2p.
+    this.p2pPort = Number(this.settings.p2pPort) || Number(ports.p2p != null ? ports.p2p : ports.public_p2p);
+
+    this.rpc = new ZebraRpc({ host: '127.0.0.1', port: this.rpcPort, cookieDir: this.dataDir, timeoutMs: 12000 });
+
+    this.node = null;
+    this.pool = null;
+    this.timer = null;
+    this.appLog = [];
+    this.lastError = null;
+
+    // Observed chain state, refreshed each tick. Null means "not known yet",
+    // which the UI renders as "—" rather than zero.
+    this.chain = {
+      height: null, bestHash: null, tipTimeUnix: null, tipAgeSec: null,
+      peersIn: 0, peersOut: 0, peers: 0, verificationProgress: null,
+      networkSolps: null, difficulty: null, stateBytes: null, synced: null
+    };
+
+    this.mining = { on: false, mode: this.settings.miningMode === 'shielded' ? 'shielded' : 'standard', startedAt: null, pausedByGate: false, pausedByIdle: false };
+    // Drives internal_miner in the generated config. Kept separate from
+    // mining.on so that stopping the node (which must also stop mining) can
+    // never trigger a restart loop.
+    this.wantInternalMiner = false;
+    this._sizeTick = 0;
+    // null until the node has told us which block 0 it holds.
+    this.genesisState = null;
+    this.address = { value: this.settings.payoutAddress || '', kind: this.settings.payoutKind || null, detail: this.settings.payoutDetail || '' };
+    this.scanFromHeight = null;
+    this.scanCursor = null;
+    this.benchmark = null;   // { solps, at, seconds } once the user runs one
+  }
+
+  // ---------------------------------------------------------------- logging
+  log(text, kind = 'app') {
+    const entry = { t: Date.now(), kind, text: String(text).slice(0, 1000) };
+    this.appLog.push(entry);
+    if (this.appLog.length > 400) this.appLog.splice(0, this.appLog.length - 400);
+    this.emit('log', entry);
+  }
+
+  getLogs(limit = 300) {
+    const nodeLines = this.node ? this.node.getLogs(limit) : [];
+    return [...this.appLog, ...nodeLines].sort((a, b) => a.t - b.t).slice(-limit);
+  }
+
+  // ---------------------------------------------------------------- binaries
+  binaryStatus() {
+    const z = requireBinary('zebrad', { allowUnpinned: this.allowUnpinned });
+    const m = this.simulateStandardMiner
+      ? { ok: true, path: null, sha256: null, reason: 'SIMULATED — no miner binary; this build cannot mine with the standard engine' }
+      : requireBinary('miner', { allowUnpinned: this.allowUnpinned });
+    return {
+      zebrad: { ok: z.ok, reason: z.reason, sha256: z.sha256, path: z.ok ? path.basename(z.path || '') : null },
+      miner: { ok: m.ok, reason: m.reason, sha256: m.sha256, simulated: this.simulateStandardMiner }
+    };
+  }
+
+  /** Standard mining is only offered when a real miner binary is available. */
+  standardMiningAvailable() {
+    if (this.simulateStandardMiner) return true;
+    return requireBinary('miner', { allowUnpinned: this.allowUnpinned }).ok;
+  }
+
+  // ---------------------------------------------------------------- node
+  nodeConfigOptions() {
+    const first = this.settings.firstNodeOverride === true;
+    return {
+      rpcPort: this.rpcPort,
+      p2pListen: this.settings.p2pListen || `0.0.0.0:${this.p2pPort}`,
+      seedPeers: Array.isArray(this.settings.seedPeers) ? this.settings.seedPeers : undefined,
+      // Zebra's own health gate is switched on whenever we are NOT claiming to
+      // be the first node. It is belt-and-braces behind this app's gate.
+      enforceHealthGate: !first && this.settings.zebraHealthGate !== false,
+      cpuThreads: Math.max(1, Math.min(8, Number(this.settings.nodeThreads) || 2)),
+      // The node must carry the payout the standard miner will ask for, and
+      // Zebra's internal miner reads its payout from here too.
+      minerAddress: this.address.value || null,
+      internalMiner: this.wantInternalMiner === true
+    };
+  }
+
+  async startNode() {
+    if (this.node && this.node.running) return { ok: true, alreadyRunning: true };
+
+    const bin = requireBinary('zebrad', { allowUnpinned: this.allowUnpinned });
+    if (!bin.ok) {
+      this.lastError = bin.reason;
+      this.log(`cannot start the node: ${bin.reason}`);
+      return { ok: false, error: bin.reason };
+    }
+    this.log(`zebrad verified, SHA-256 ${bin.sha256}`);
+
+    fs.mkdirSync(this.dataDir, { recursive: true });
+    this.node = new ZebraNode({ binaryPath: bin.path, dataDir: this.dataDir, manifest: this.manifest });
+    this.node.on('log', (e) => this.emit('log', e));
+    this.node.on('line', (line) => this.onNodeLine(line));
+    this.node.on('exit', (info) => {
+      if (!info || !info.expected) this.log('the node stopped unexpectedly; mining has been stopped too');
+      this.dropMining().catch(() => {});
+    });
+
+    let started;
+    try {
+      started = await this.node.start(this.nodeConfigOptions());
+    } catch (e) {
+      this.lastError = e.message;
+      this.log(`node configuration refused: ${e.message}`);
+      this.node = null;
+      return { ok: false, error: e.message };
+    }
+    if (!started.ok) { this.node = null; return started; }
+    this.log(`node started (pid ${started.pid}) on ${this.manifest.identity.network_name}`);
+    this.ensureTicking();
+    this.ensureGenesis().catch((e) => this.log(`genesis check failed: ${e.message}`));
+    return { ok: true, pid: started.pid };
+  }
+
+  /**
+   * Make sure the node has block 0 — and that it is the RIGHT block 0.
+   *
+   * Zebra inserts a genesis block by itself only on Regtest. On a configured
+   * testnet a fresh node normally receives block 0 from a peer during sync,
+   * which is what happens for anybody who installs this app and connects to
+   * the seed. Two cases need help:
+   *   * the very first node of a brand-new network, which has no peer;
+   *   * a node whose peers are slow or unreachable on first start.
+   * In both, the bytes the network was defined with are handed to the node's
+   * own RPC, once. This is not consensus code: the node validates the block
+   * itself and rejects anything that is not the genesis its config names.
+   *
+   * If the node somehow already holds a DIFFERENT block 0, that is a wrong
+   * chain, and the app says so loudly instead of carrying on.
+   */
+  /**
+   * Single-flight wrapper: startNode() kicks this off and the UI may ask for
+   * it too. Two concurrent runs would race on submitblock and each report the
+   * other's half-finished state, so callers share one run.
+   */
+  ensureGenesis() {
+    if (!this._genesisRun) {
+      this._genesisRun = this.ensureGenesisOnce().finally(() => { this._genesisRun = null; });
+    }
+    return this._genesisRun;
+  }
+
+  async ensureGenesisOnce() {
+    const gen = this.manifest.genesis || {};
+    const expected = String(gen.hash || '').toLowerCase();
+    const hex = typeof gen.hex === 'string' && /^[0-9a-f]+$/i.test(gen.hex) ? gen.hex : null;
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    /**
+     * null = the node has no block 0. A node that is not answering YET is a
+     * different thing from a node with an empty chain, so this waits for the
+     * RPC to come up rather than reporting "no genesis" while it is starting.
+     */
+    const readGenesis = async () => {
+      const until = Date.now() + 90000;
+      while (Date.now() < until) {
+        try {
+          const h = await this.rpc.getBlockHash(0);
+          return h ? String(h).toLowerCase() : null;
+        } catch (e) {
+          if (e.code === 'NO_COOKIE' || e.code === 'NET' || e.code === 'ECONNREFUSED' || e.code === 'TIMEOUT') {
+            await sleep(1000);
+            continue;
+          }
+          return null; // "block not found" on an empty chain
+        }
+      }
+      return null;
+    };
+
+    /** Compare what the node holds with what this build expects. */
+    const settle = (got, source) => {
+      if (got === expected) {
+        this.genesisState = { ok: true, hash: got, source };
+        this.log(`genesis block confirmed: ${got.slice(0, 16)}… (${source})`);
+        return this.genesisState;
+      }
+      // A different block 0 means a different chain. Say so; do not mine on it.
+      this.genesisState = { ok: false, hash: got, expected, error: 'wrong chain' };
+      this.lastError =
+        `This node holds a different genesis block (${got.slice(0, 16)}…) from the one this build ` +
+        `expects (${expected.slice(0, 16)}…). That data folder belongs to another network. ` +
+        'Stop the node and choose an empty folder.';
+      this.log(this.lastError);
+      this.dropMining().catch(() => {});
+      return this.genesisState;
+    };
+
+    // Phase 1 — let peers deliver block 0, which is what happens for everyone
+    // who installs this app and connects to the seed. The first node of a new
+    // network has nobody to wait for, so it skips straight to phase 2.
+    const graceMs = this.settings.firstNodeOverride === true ? 0 : 45000;
+    if (graceMs > 0) this.log(`waiting up to ${Math.round(graceMs / 1000)}s for a peer to send the genesis block…`);
+    const graceUntil = Date.now() + graceMs;
+    do {
+      const got = await readGenesis();
+      if (got) return settle(got, 'received from a peer');
+      if (Date.now() >= graceUntil) break;
+      await sleep(2000);
+    } while (true);
+
+    // Phase 2 — no peer produced it. Hand the node the bytes this build ships.
+    if (!hex) {
+      this.genesisState = { ok: false, error: 'no peer sent the genesis block and this build does not carry it' };
+      this.log(this.genesisState.error);
+      return this.genesisState;
+    }
+    try {
+      const r = await this.rpc.submitBlock(hex);
+      if (r != null && r !== 'duplicate') {
+        this.genesisState = { ok: false, error: String(r) };
+        this.log(`the node refused the genesis block: ${r}`);
+        return this.genesisState;
+      }
+      this.log('no peer had the genesis block, so it was taken from this build and handed to the node');
+    } catch (e) {
+      this.log(`could not submit the genesis block: ${e.message}`);
+    }
+
+    // Phase 3 — read it back and verify. Trusting our own submission is not
+    // verification; the node's answer is.
+    const until = Date.now() + 30000;
+    while (Date.now() < until) {
+      const got = await readGenesis();
+      if (got) return settle(got, 'taken from this build');
+      await sleep(1500);
+    }
+
+    this.genesisState = { ok: false, error: 'the node never reported a genesis block' };
+    this.log(this.genesisState.error);
+    return this.genesisState;
+  }
+
+  async stopNode() {
+    // Stop the miners first, WITHOUT restarting the node: this is the path a
+    // node restart itself goes through, so it must never loop.
+    await this.dropMining();
+    if (!this.node) return { graceful: true, ms: 0, attempts: 0, hardKilled: false, detail: 'not running' };
+    const report = await this.node.stop({ timeoutMs: Number(this.settings.stopTimeoutMs) || 20000 });
+    this.chain = { ...this.chain, height: null, peers: 0, peersIn: 0, peersOut: 0, synced: null, tipAgeSec: null };
+    return report;
+  }
+
+  /** Restart with a new config. Used when a setting the node reads changes. */
+  async restartNode(why) {
+    this.log(`restarting the node: ${why}`);
+    await this.stopNode();
+    return this.startNode();
+  }
+
+  onNodeLine(line) {
+    // Zebra's internal miner announces its own accepted blocks. That log line
+    // is the only place the shielded miner reports anything: it exposes no
+    // RPC and no metric.
+    const mined = parseMinedLine(line);
+    if (mined) {
+      this.log(`this machine mined block ${mined.height} (${mined.hash.slice(0, 12)}…)`);
+      this.recordShieldedBlock(mined).catch((e) => this.log(`could not read the subsidy for block ${mined.height}: ${e.message}`));
+    }
+  }
+
+  // ---------------------------------------------------------------- mining
+  async startMining() {
+    if (!this.node || !this.node.running) return { ok: false, error: 'Start the full node first.' };
+    if (!this.address.value) return { ok: false, error: 'Paste a payout address first.' };
+
+    const decision = this.evaluateGate();
+    if (!decision.allow) return { ok: false, error: decision.message, reason: decision.reason };
+
+    if (this.mining.mode === 'shielded') {
+      // Zebra reads internal_miner from its config file at start-up only, so
+      // switching shielded mining on costs one node restart. That is stated in
+      // the UI next to the toggle rather than hidden.
+      this.wantInternalMiner = true;
+      const r = await this.restartNode('switching Zebra’s internal miner on');
+      if (!r.ok) { this.wantInternalMiner = false; return r; }
+      this.mining.on = true;
+      this.mining.startedAt = Date.now();
+      this.mining.pausedByGate = false;
+      this.log('shielded mining on: one solver thread inside the node, paying your unified address');
+      return { ok: true, mode: 'shielded', restarted: true };
+    }
+
+    if (!this.standardMiningAvailable()) {
+      return { ok: false, error: 'Standard mining is not available in this build: privacy-miner is not bundled yet.' };
+    }
+    const minerBin = this.simulateStandardMiner ? { path: null } : requireBinary('miner', { allowUnpinned: this.allowUnpinned });
+    this.pool = new MinerPool({ binaryPath: minerBin.path, simulate: this.simulateStandardMiner });
+    this.pool.on('log', (e) => this.emit('log', e));
+    this.pool.on('block', (b) => {
+      this.log(`this machine mined a block (${b.hash.slice(0, 12)}…)`);
+      this.recordTransparentBlock(b.hash).catch((e) => this.log(`could not read block ${b.hash.slice(0, 12)}…: ${e.message}`));
+    });
+
+    const count = this.effectiveWorkerCount();
+    const r = await this.pool.start({
+      count,
+      configPath: this.node.configPath,
+      rpcPort: this.rpcPort,
+      cookieDir: this.dataDir,
+      payout: this.address.value
+    });
+    if (!r.ok) { this.pool = null; return r; }
+    this.mining.on = true;
+    this.mining.startedAt = Date.now();
+    this.mining.pausedByGate = false;
+    if (this.scanFromHeight == null && Number.isInteger(this.chain.height)) {
+      this.scanFromHeight = this.chain.height;
+      this.scanCursor = this.chain.height;
+    }
+    return { ok: true, mode: 'standard', workers: r.workers, simulated: r.simulated };
+  }
+
+  effectiveWorkerCount() {
+    const cores = require('os').cpus().length || 2;
+    const max = Math.max(1, cores - 1);
+    const want = Number(this.settings.intensity);
+    return Math.max(1, Math.min(max, Number.isFinite(want) ? Math.round(want) : Math.max(1, Math.floor(max / 2))));
+  }
+
+  async stopMining() { return this.stopMiningInternal('stopped by you'); }
+
+  /**
+   * Stop mining and, for the shielded engine, restart the node so Zebra's
+   * internal miner actually goes away. Never call this from the node's own
+   * stop path — use dropMining() there.
+   */
+  async stopMiningInternal(why) {
+    const wasMode = this.mining.mode;
+    const wasOn = this.mining.on || !!this.pool || this.wantInternalMiner;
+    if (!wasOn) return { ok: true, wasRunning: false };
+
+    if (this.pool) {
+      const r = await this.dropMining();
+      this.log(`standard mining stopped (${why})`);
+      return { ok: true, wasRunning: true, mode: wasMode, ...r };
+    }
+
+    const needRestart = this.wantInternalMiner && this.node && this.node.running;
+    // Clear the CONFIG intent here, not in dropMining(): dropMining runs on the
+    // way through every node restart, and clearing it there would switch the
+    // internal miner off again the moment we restarted to switch it on.
+    this.wantInternalMiner = false;
+    await this.dropMining();
+    if (needRestart) {
+      this.log(`shielded mining stopping (${why}) — the node restarts because Zebra reads that switch only at start-up`);
+      await this.restartNode('switching Zebra’s internal miner off');
+    }
+    return { ok: true, wasRunning: true, mode: wasMode };
+  }
+
+  /**
+   * Tear the miners down without touching the node. Used by stopNode() and by
+   * the node's own exit handler, so a restart can never recurse.
+   */
+  async dropMining() {
+    this.mining.on = false;
+    this.mining.startedAt = null;
+    // wantInternalMiner is deliberately NOT touched here: it is the config the
+    // next node start must use, and a restart goes through this method.
+    if (this.pool) {
+      const r = await this.pool.stop();
+      this.pool = null;
+      return { ok: true, ...r };
+    }
+    return { ok: true, stopped: 0 };
+  }
+
+  // ---------------------------------------------------------------- gate
+  evaluateGate() {
+    return this.gate.evaluate({
+      nodeRunning: !!(this.node && this.node.running),
+      synced: this.chain.synced,
+      peers: this.chain.peers,
+      tipAgeSec: this.chain.tipAgeSec,
+      addressKind: this.address.kind,
+      mode: this.mining.mode
+    });
+  }
+
+  // ---------------------------------------------------------------- rewards
+  /** Fetch a block's coinbase transaction, whatever verbosity the node supports. */
+  async fetchCoinbase(hashOrHeight) {
+    let block;
+    try {
+      block = await this.rpc.getBlock(hashOrHeight, 2);
+    } catch {
+      block = null;
+    }
+    if (block && Array.isArray(block.tx) && block.tx.length && typeof block.tx[0] === 'object') {
+      return { block, coinbase: block.tx[0] };
+    }
+    if (!block) block = await this.rpc.getBlock(hashOrHeight, 1);
+    if (!block || !Array.isArray(block.tx) || !block.tx.length) throw new Error('block has no transactions');
+    const txid = typeof block.tx[0] === 'string' ? block.tx[0] : block.tx[0].txid;
+    const tx = await this.rpc.getRawTransaction(txid, 1);
+    return { block, coinbase: tx };
+  }
+
+  async blockSubsidyZat(height) {
+    const atomic = this.ledger.atomicPerCoin;
+    try {
+      const s = await this.rpc.getBlockSubsidy(height);
+      if (!s) return { minerZat: null, totalZat: null };
+      const minerZat = s.minerZat != null ? Math.round(Number(s.minerZat))
+        : s.miner != null ? Math.round(Number(s.miner) * atomic) : null;
+      let totalZat = minerZat;
+      const streams = Array.isArray(s.fundingstreams) ? s.fundingstreams : [];
+      for (const f of streams) {
+        const v = f.valueZat != null ? Math.round(Number(f.valueZat)) : Math.round(Number(f.value) * atomic);
+        if (Number.isFinite(v) && Number.isFinite(totalZat)) totalZat += v;
+      }
+      if (s.lockboxstreams) {
+        for (const f of s.lockboxstreams) {
+          const v = f.valueZat != null ? Math.round(Number(f.valueZat)) : Math.round(Number(f.value) * atomic);
+          if (Number.isFinite(v) && Number.isFinite(totalZat)) totalZat += v;
+        }
+      }
+      return { minerZat: Number.isFinite(minerZat) ? minerZat : null, totalZat: Number.isFinite(totalZat) ? totalZat : null };
+    } catch {
+      return { minerZat: null, totalZat: null };
+    }
+  }
+
+  async recordTransparentBlock(hash) {
+    const { block, coinbase } = await this.fetchCoinbase(hash);
+    const paidZat = coinbasePaidTo(coinbase, this.address.value, this.ledger.atomicPerCoin);
+    if (paidZat <= 0) {
+      this.log(`block ${String(hash).slice(0, 12)}… does not pay this machine's address; not counted`);
+      return null;
+    }
+    const height = Number(block.height);
+    const subsidy = await this.blockSubsidyZat(height);
+    const rec = this.ledger.record({
+      hash: String(block.hash || hash).toLowerCase(),
+      height,
+      time: Number(block.time) || null,
+      mode: 'transparent',
+      paidZat,
+      subsidyZat: subsidy.totalZat,
+      minerSubsidyZat: subsidy.minerZat
+    });
+    this.emit('reward', rec);
+    return rec;
+  }
+
+  async recordShieldedBlock({ height, hash }) {
+    const subsidy = await this.blockSubsidyZat(height);
+    const rec = this.ledger.record({
+      hash, height, mode: 'shielded',
+      subsidyZat: subsidy.totalZat,
+      minerSubsidyZat: subsidy.minerZat,
+      time: null
+    });
+    this.emit('reward', rec);
+    return rec;
+  }
+
+  /**
+   * Backstop scan: walk forward from where mining started and pick up any
+   * block that pays our transparent address but whose "accepted" line we
+   * missed (a worker crashed, the app restarted, the line was truncated).
+   * Bounded per tick so it never blocks the UI.
+   */
+  async scanForRewards() {
+    if (this.address.kind !== 'transparent') return;
+    if (!Number.isInteger(this.chain.height)) return;
+    if (this.scanCursor == null) return;
+    let budget = SCAN_BUDGET_PER_TICK;
+    while (this.scanCursor <= this.chain.height && budget > 0) {
+      const h = this.scanCursor;
+      budget -= 1;
+      try {
+        const { block, coinbase } = await this.fetchCoinbase(h);
+        const paidZat = coinbasePaidTo(coinbase, this.address.value, this.ledger.atomicPerCoin);
+        if (paidZat > 0) {
+          const subsidy = await this.blockSubsidyZat(h);
+          this.ledger.record({
+            hash: String(block.hash).toLowerCase(),
+            height: h,
+            time: Number(block.time) || null,
+            mode: 'transparent',
+            paidZat,
+            subsidyZat: subsidy.totalZat,
+            minerSubsidyZat: subsidy.minerZat
+          });
+        }
+      } catch {
+        return; // node busy; try again next tick from the same cursor
+      }
+      this.scanCursor = h + 1;
+    }
+  }
+
+  // ---------------------------------------------------------------- polling
+  ensureTicking() {
+    if (this.timer) return;
+    this.timer = setInterval(() => { this.tick().catch(() => {}); }, TICK_MS);
+    if (this.timer.unref) this.timer.unref();
+  }
+
+  async refreshChain() {
+    if (!this.node || !this.node.running) {
+      this.chain = { ...this.chain, height: null, peers: 0, peersIn: 0, peersOut: 0, synced: null, tipAgeSec: null };
+      return;
+    }
+    try {
+      const info = await this.rpc.getBlockchainInfo();
+      if (info) {
+        this.chain.height = Number(info.blocks);
+        this.chain.bestHash = info.bestblockhash || null;
+        this.chain.difficulty = Number(info.difficulty) || null;
+        this.chain.verificationProgress = info.verificationprogress != null ? Number(info.verificationprogress) : null;
+        // Deliberately NOT derived from info.estimatedheight — see the note in
+        // sync-gate.js. That field extrapolates from the genesis timestamp and
+        // reports a brand-new chain as thousands of blocks behind for ever.
+        this.chain.estimatedHeight = Number.isFinite(Number(info.estimatedheight)) ? Number(info.estimatedheight) : null;
+      }
+    } catch (e) {
+      if (e.code !== 'NO_COOKIE') this.lastError = e.message;
+      return;
+    }
+
+    try {
+      const peers = await this.rpc.getPeerInfo();
+      if (Array.isArray(peers)) {
+        this.chain.peers = peers.length;
+        this.chain.peersIn = peers.filter((p) => p && (p.inbound === true || p.addr_direction === 'inbound')).length;
+        this.chain.peersOut = this.chain.peers - this.chain.peersIn;
+      }
+    } catch { /* keep the previous value */ }
+
+    try {
+      if (this.chain.bestHash) {
+        const tip = await this.rpc.getBlock(this.chain.bestHash, 1);
+        if (tip && Number.isFinite(Number(tip.time))) {
+          this.chain.tipTimeUnix = Number(tip.time);
+          this.chain.tipAgeSec = tipAgeSeconds(this.chain.tipTimeUnix);
+        }
+      }
+    } catch { /* keep the previous value */ }
+
+    try {
+      const solps = await this.rpc.getNetworkSolps();
+      const v = Number(solps);
+      // getnetworksolps returns 0 on a chain with too few blocks to estimate.
+      // Zero is not a measurement, so it is reported as unknown.
+      this.chain.networkSolps = Number.isFinite(v) && v > 0 ? v : null;
+    } catch { /* keep the previous value */ }
+
+    // "Synced" for the UI: this node has peers AND the block it holds is
+    // recent. Null while we cannot tell. No wall-clock extrapolation.
+    const minPeers = this.gate.minPeers;
+    if (this.chain.peers < minPeers) this.chain.synced = null;
+    else if (!Number.isFinite(this.chain.tipAgeSec)) this.chain.synced = null;
+    else this.chain.synced = this.chain.tipAgeSec <= this.gate.maxTipAgeSec;
+  }
+
+  idleGate() {
+    if (this.settings.idleOnly !== true) return { pause: false, idleSec: null };
+    if (typeof this.idleSeconds !== 'function') return { pause: false, idleSec: null };
+    let idleSec = null;
+    try { idleSec = Number(this.idleSeconds()); } catch { return { pause: false, idleSec: null }; }
+    if (!Number.isFinite(idleSec)) return { pause: false, idleSec: null };
+    return { pause: idleSec < IDLE_THRESHOLD_S, idleSec };
+  }
+
+  async tick() {
+    await this.refreshChain();
+
+    if (this.node && this.node.running) {
+      this._sizeTick = (this._sizeTick + 1) % 30;
+      if (this._sizeTick === 1) this.chain.stateBytes = this.node.stateSizeBytes();
+    }
+
+    const decision = this.evaluateGate();
+
+    // Auto-pause: the gate closed while mining was running.
+    if (this.mining.on && !decision.allow) {
+      this.mining.pausedByGate = true;
+      this.log(`mining paused (${decision.reason}): ${decision.message}`);
+      await this.stopMiningInternal('sync gate closed');
+      this.mining.pausedByGate = true;
+    } else if (!this.mining.on && this.mining.pausedByGate && decision.allow && this.settings.autoResume !== false) {
+      this.mining.pausedByGate = false;
+      this.log('mining resumed: the node has peers again and its tip is current');
+      await this.startMining();
+    }
+
+    // Idle-only: pause while the machine is in use.
+    const idle = this.idleGate();
+    if (this.mining.on && idle.pause && !this.mining.pausedByIdle) {
+      this.mining.pausedByIdle = true;
+      this.log('mining paused: you are using this machine');
+      await this.stopMiningInternal('machine in use');
+      this.mining.pausedByIdle = true;
+    } else if (!this.mining.on && this.mining.pausedByIdle && !idle.pause && decision.allow) {
+      this.mining.pausedByIdle = false;
+      this.log('mining resumed: the machine has been idle');
+      await this.startMining();
+    }
+
+    if (this.mining.on && this.mining.mode === 'standard') await this.scanForRewards();
+
+    this.emit('state', this.getState(decision));
+  }
+
+  // ---------------------------------------------------------------- state
+  getState(decision) {
+    const d = decision || this.evaluateGate();
+    const totals = this.ledger.totals(Number.isInteger(this.chain.height) ? this.chain.height : 0);
+    const poolSolps = this.pool ? this.pool.solps() : null;
+
+    return {
+      network: {
+        name: this.manifest.identity.network_name,
+        chain: this.manifest.identity.chain,
+        ticker: this.manifest.identity.ticker,
+        isTestnet: this.manifest.identity.is_testnet !== false,
+        status: this.manifest.status
+      },
+      node: {
+        running: !!(this.node && this.node.running),
+        pid: this.node ? this.node.pid : null,
+        uptimeSec: this.node && this.node.startedAt ? Math.floor((Date.now() - this.node.startedAt) / 1000) : 0,
+        height: this.chain.height,
+        bestHash: this.chain.bestHash,
+        tipAgeSec: this.chain.tipAgeSec,
+        peers: this.chain.peers,
+        peersIn: this.chain.peersIn,
+        peersOut: this.chain.peersOut,
+        synced: this.chain.synced,
+        verificationProgress: this.chain.verificationProgress,
+        stateBytes: this.chain.stateBytes,
+        dataDir: this.dataDir,
+        p2pPort: this.p2pPort,
+        rpcPort: this.rpcPort,
+        lastStop: this.node ? this.node.lastStopReport : null,
+        genesis: this.genesisState
+      },
+      mining: {
+        on: this.mining.on,
+        mode: this.mining.mode,
+        standardAvailable: this.standardMiningAvailable(),
+        standardSimulated: this.simulateStandardMiner,
+        workers: this.pool ? this.pool.workerCount : 0,
+        intensity: this.effectiveWorkerCount(),
+        maxWorkers: Math.max(1, (require('os').cpus().length || 2) - 1),
+        pausedByGate: this.mining.pausedByGate,
+        pausedByIdle: this.mining.pausedByIdle,
+        idleOnly: this.settings.idleOnly === true,
+        uptimeSec: this.mining.startedAt ? Math.floor((Date.now() - this.mining.startedAt) / 1000) : 0,
+        // Sol/s is shown ONLY when something measured it. The standard miner
+        // reports its own rate when it prints one; the internal miner prints
+        // none at all, so this stays null and the UI shows "—".
+        solps: poolSolps,
+        solpsSource: poolSolps != null ? 'miner output' : null,
+        benchmark: this.benchmark
+      },
+      gate: d,
+      rewards: {
+        blocksFound: totals.blocksFound,
+        transparentBlocks: totals.transparentBlocks,
+        shieldedBlocks: totals.shieldedBlocks,
+        spendableZat: totals.spendableZat,
+        maturingZat: totals.maturingZat,
+        totalZat: totals.totalZat,
+        shieldedSubsidyZat: totals.shieldedSubsidyZat,
+        shieldedIsLabelOnly: totals.shieldedIsEstimateOfSubsidyOnly,
+        nextMaturesInBlocks: totals.nextMaturesInBlocks,
+        maturity: this.ledger.maturity,
+        atomicPerCoin: this.ledger.atomicPerCoin,
+        blocks: this.ledger.list().slice(0, 50)
+      },
+      network_stats: {
+        networkSolps: this.chain.networkSolps,
+        difficulty: this.chain.difficulty
+      },
+      payout: {
+        address: this.address.value,
+        kind: this.address.kind,
+        detail: this.address.detail
+      },
+      binaries: this.binaryStatus(),
+      lastError: this.lastError
+    };
+  }
+
+  // ---------------------------------------------------------------- settings
+  async setPayoutAddress(raw) {
+    const result = await validateWithNode(this.rpc, raw);
+    if (!result.ok) return result;
+    const changed = result.address !== this.address.value;
+    this.address = { value: result.address, kind: result.kind, detail: result.detail };
+    this.settings.payoutAddress = result.address;
+    this.settings.payoutKind = result.kind;
+    this.settings.payoutDetail = result.detail;
+    this.saveSettings(this.settings);
+    this.log(`payout address set (${result.kind}); the node validated it`);
+    // The node carries the payout in its own config, so it must be rewritten.
+    if (changed && this.node && this.node.running) {
+      await this.restartNode('the payout address changed');
+    }
+    return { ...result, modes: result.modes };
+  }
+
+  async setMiningMode(mode) {
+    const m = mode === 'shielded' ? 'shielded' : 'standard';
+    if (m === this.mining.mode) return { ok: true, mode: m };
+    const wasOn = this.mining.on;
+    if (wasOn) await this.stopMiningInternal('mining mode changed');
+    this.mining.mode = m;
+    this.settings.miningMode = m;
+    this.saveSettings(this.settings);
+    if (wasOn) await this.startMining();
+    return { ok: true, mode: m, needsAddressKind: m === 'shielded' ? 'unified' : 'transparent' };
+  }
+
+  async setIntensity(n) {
+    const max = Math.max(1, (require('os').cpus().length || 2) - 1);
+    const v = Math.max(1, Math.min(max, Math.round(Number(n) || 1)));
+    this.settings.intensity = v;
+    this.saveSettings(this.settings);
+    if (this.pool && this.pool.running) await this.pool.setCount(v);
+    return { ok: true, intensity: v, max };
+  }
+
+  setIdleOnly(v) {
+    this.settings.idleOnly = v === true;
+    this.saveSettings(this.settings);
+    if (!this.settings.idleOnly) this.mining.pausedByIdle = false;
+    return { ok: true, idleOnly: this.settings.idleOnly };
+  }
+
+  /**
+   * The first-node override. Only ever set from an explicit, confirmed UI
+   * action; it changes the generated node config, so the node restarts.
+   */
+  async setFirstNodeOverride(on, confirmationPhrase) {
+    const want = on === true;
+    if (want && String(confirmationPhrase || '').trim().toUpperCase() !== 'FIRST NODE') {
+      return { ok: false, error: 'Type FIRST NODE to confirm you are starting a brand-new network.' };
+    }
+    this.settings.firstNodeOverride = want;
+    this.gate.setFirstNode(want);
+    this.saveSettings(this.settings);
+    this.log(want
+      ? 'FIRST NODE override on: mining is allowed with no peers. Blocks you find are confirmed by nobody else until other nodes join.'
+      : 'FIRST NODE override off: mining again requires at least one peer and a current tip.');
+    if (this.node && this.node.running) await this.restartNode('the first-node override changed');
+    return { ok: true, firstNode: want };
+  }
+
+  async setDataDir(dir) {
+    if (typeof dir !== 'string' || !dir.trim()) return { ok: false, error: 'Choose a folder.' };
+    if (this.node && this.node.running) return { ok: false, error: 'Stop the node before moving its data folder.' };
+    this.settings.dataDir = dir;
+    this.dataDir = dir;
+    this.rpc = new ZebraRpc({ host: '127.0.0.1', port: this.rpcPort, cookieDir: this.dataDir, timeoutMs: 12000 });
+    this.saveSettings(this.settings);
+    return { ok: true, dataDir: dir };
+  }
+
+  async machineCheck() {
+    return machineCheck({ dataDir: this.dataDir, p2pPort: this.p2pPort });
+  }
+
+  // ---------------------------------------------------------------- shutdown
+  /** Nothing runs hidden: leave no child process behind. */
+  async stopAll() {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    // dropMining, not stopMiningInternal: on the way out there is no point
+    // restarting the node just to turn the internal miner off.
+    this.wantInternalMiner = false;
+    const miner = await this.dropMining();
+    let node = { graceful: true, ms: 0 };
+    if (this.node) node = await this.node.stop({ timeoutMs: Number(this.settings.stopTimeoutMs) || 20000 });
+    return { miner, node };
+  }
+}
+
+module.exports = { ChainEngine, TICK_MS, IDLE_THRESHOLD_S, REASON, splitSubsidy };
