@@ -67,7 +67,10 @@ const BANNED = [
 ];
 for (const [f, t] of sourceText) {
   const rel = path.relative(ROOT, f);
+  // These two files exist to name the banned strings, so they are exempt from
+  // the ban. Nothing else is.
   if (rel.startsWith('scripts' + path.sep + 'lint')) continue;
+  if (rel.startsWith('scripts' + path.sep + 'string-sweep')) continue;
   for (const [re, why] of BANNED) {
     const m = re.exec(t);
     if (m) failures.push(`${rel}: ${why} — found ${JSON.stringify(m[0].slice(0, 60))}`);
@@ -99,7 +102,22 @@ const handled = new Set([...main.matchAll(/handle\(\s*'([a-z]+:[A-Za-z]+)'/g)].m
 for (const c of used) if (!handled.has(c)) failures.push(`preload calls ${c} but main.js has no handler for it`);
 for (const c of handled) if (!used.has(c)) notes.push(`main.js handles ${c}, which the preload never calls`);
 
-// ---- 6. fonts are bundled, not fetched ----
+// ---- 6. no raw control characters in source ----
+// Two files once carried a raw NUL and a raw backspace where the author meant
+// to write \x00 and \b. The code happened to behave identically, so nothing
+// failed and nothing showed it. Raw control bytes in source are never intended.
+for (const f of files) {
+  const rel = path.relative(ROOT, f);
+  if (!/\.(js|mjs|jsx|json|md|ps1|yml|nsh|html|css|toml)$/.test(rel)) continue;
+  if (rel.startsWith('dist' + path.sep)) continue;
+  const buf = fs.readFileSync(f);
+  const ctrl = [...new Set([...buf].filter((b) => b < 0x09 || b === 0x0b || b === 0x0c || (b >= 0x0e && b <= 0x1f)))];
+  if (ctrl.length) {
+    failures.push(`${rel}: raw control byte(s) ${ctrl.map((b) => '0x' + b.toString(16)).join(', ')} — write the escape sequence instead`);
+  }
+}
+
+// ---- 7. fonts are bundled, not fetched ----
 const fontDir = path.join(ROOT, 'src', 'assets', 'fonts');
 for (const f of ['Sora-Variable.woff2', 'Manrope-Variable.woff2', 'JetBrainsMono-Variable.woff2']) {
   if (!fs.existsSync(path.join(fontDir, f))) failures.push(`missing bundled font ${f}`);

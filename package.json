@@ -10,12 +10,13 @@
   "scripts": {
     "lint": "node scripts/lint.mjs",
     "test": "node --test test/*.test.js",
-    "check": "npm run lint && npm test",
+    "check": "npm run lint && npm run sweep && npm test",
     "build:ui": "vite build",
     "start": "npm run build:ui && electron .",
     "dist": "npm run build:ui && electron-builder --win",
     "binaries:manifest": "node scripts/make-binaries-manifest.mjs",
-    "integration": "node scripts/integration-headless.mjs"
+    "integration": "node scripts/integration-headless.mjs",
+    "sweep": "node scripts/string-sweep.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

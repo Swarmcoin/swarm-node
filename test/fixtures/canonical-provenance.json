@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Provenance of test/fixtures/canonical-zebra-local.toml, the golden copy of the",
+    "config the project's canonical renderer produces for SwarmTestnet.",
+    "test/renderer-parity.test.js compares the app's own generator against that",
+    "fixture byte for byte, in CI, where the planning repository does not exist.",
+    "A second test re-renders with the real renderer when it IS present, and fails",
+    "if the fixture has gone stale."
+  ],
+  "captured_utc": "2026-09-21T17:59:41Z",
+  "network_name": "SwarmTestnet",
+  "genesis_hash": "045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28",
+  "renderer": {
+    "path": "scripts/swarm/render_config.py (private planning repository D:/privacy)",
+    "sha256": "33133e627d3b85527401aa36244cbec4910ec7cce9bdaa35673fb210d1a39840"
+  },
+  "manifest": {
+    "path": "network/swarm-testnet/manifest.json (private planning repository D:/privacy)",
+    "sha256": "81941674f8f8e04c448d09ecf90b5a60b34eb1c1db7e5757e20dbda9f36335a5"
+  },
+  "rendered_source": {
+    "path": "network/swarm-testnet/rendered/zebra-local.toml",
+    "sha256": "f7a96ae96d0f2e3b1584fec0d380b280579c38f55bfef4b35cf273a46d290367"
+  },
+  "fixture": {
+    "path": "test/fixtures/canonical-zebra-local.toml",
+    "sha256": "f7a96ae96d0f2e3b1584fec0d380b280579c38f55bfef4b35cf273a46d290367",
+    "line_endings": "LF, enforced by .gitattributes"
+  }
+}

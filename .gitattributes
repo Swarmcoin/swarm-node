@@ -1,0 +1,14 @@
+# Byte-for-byte comparisons only mean something if git stops rewriting the
+# bytes. The golden fixture below is compared character by character against
+# what the app generates, and on a Windows runner git would otherwise check it
+# out with CRLF line endings and the comparison would fail on every line.
+# (It did: run 35634666251, "[network.testnet_parameters]\r" vs
+# "[network.testnet_parameters]".)
+* text=auto eol=lf
+
+test/fixtures/*.toml text eol=lf
+electron/net/*.json  text eol=lf
+*.ps1                text eol=lf
+*.woff2              binary
+*.ico                binary
+*.exe                binary

@@ -40,6 +40,11 @@ const { splitSubsidy } = require(path.join(ROOT, 'electron/chain/rewards.js'));
 // wallet, key or seed being involved.
 const UNIFIED = 'utest10a8k6aw5w33kvyt7x6fryzu7vvsjru5vgcfnvr288qx2zm6p63ygcajtaze0px08t583dyrgr42vasazjhhnntus2tqrpkzu0dm2l4cgf3ld6wdqdrf3jv8mvfx9c80e73syer9l2wlgawjtf7yvj0eqwdf354trtelxnr0fhpw9792eaf49ghstkyftc9lwqqwy4ye0cleagp4nzyt';
 
+// Zebra's own documented default Testnet TRANSPARENT miner address, from
+// zebra-rpc/src/config/mining.rs at v6.3.0. Worthless coins on a throwaway
+// network; no key of anybody's is involved.
+const TRANSPARENT = 'tmJymvcUCn1ctbghvTJpXBwHiMEB8P6wxNV';
+
 const WANT_BLOCKS = Number(process.env.SWARM_IT_BLOCKS) || 3;
 const MINE_TIMEOUT_MS = Number(process.env.SWARM_IT_TIMEOUT) || 360000;
 
@@ -47,6 +52,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'test/fixtures/throw
 // The canonical manifest names the P2P port public_p2p; keep one local alias.
 const P2P = manifest.ports.p2p != null ? manifest.ports.p2p : manifest.ports.public_p2p;
 const RPC = manifest.ports.rpc;
+const atomic = manifest.economics.atomic_unit_per_coin;
 const dataDir = process.env.SWARM_NODE_TEST_DIR || path.join(os.tmpdir(), 'swarm-node-integration');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -233,7 +239,6 @@ async function main() {
   // The miner's share must be what the node itself states, and must be 80% of
   // the subsidy — 5.00 SWM of 6.25 in era 0, never 6.25.
   const mined = [...engine.ledger.blocks.values()];
-  const atomic = manifest.economics.atomic_unit_per_coin;
   const expected = splitSubsidy(Math.round(manifest.economics.era0_block_reward_coins * atomic), manifest.economics.recipients).minerZat;
   if (mined.length) {
     const subsidy = await rpc.getBlockSubsidy(mined[0].height);
@@ -270,6 +275,58 @@ async function main() {
     check('9  mining pauses by itself when the gate closes', engine.mining.on === false && engine.mining.pausedByGate === true);
     engine.gate.setFirstNode(true);
   }
+
+  // --- 11. the standard engine: N privacy-miner copies, transparent payout --
+  // This is the half the shielded run cannot reach: a payout that is visible
+  // on the chain, so the amount can be read back and checked rather than
+  // labelled.
+  if (!engine.standardMiningAvailable()) {
+    check('11  standard mining is available', false, 'privacy-miner is not bundled in this build');
+    return;
+  }
+
+  await engine.stopMiningInternal('switching to the standard engine');
+  const before = engine.ledger.blocks.size;
+
+  const t = await engine.setPayoutAddress(TRANSPARENT);
+  check('11  the node identifies the transparent address', t.ok === true && t.kind === 'transparent', t.kind || t.error);
+  await engine.setMiningMode('standard');
+  await engine.setIntensity(2);
+  await engine.refreshChain();
+
+  const sm = await engine.startMining();
+  check('11b standard mining starts N workers, one core each', sm.ok === true && sm.workers === 2, JSON.stringify(sm));
+  check('11c the node was NOT restarted to start or stop the standard miner', engine.node && engine.node.running === true);
+
+  const stdDeadline = Date.now() + MINE_TIMEOUT_MS;
+  while (Date.now() < stdDeadline) {
+    await engine.tick();
+    if (engine.ledger.totals(engine.chain.height || 0).transparentBlocks >= 1) break;
+    await sleep(1500);
+  }
+  const st2 = engine.getState();
+  const tBlocks = st2.rewards.transparentBlocks;
+  check('11d the standard miner found a block', tBlocks >= 1, `${tBlocks} transparent block(s), height ${engine.chain.height}`);
+
+  if (tBlocks >= 1) {
+    const rec = engine.ledger.list().find((b) => b.mode === 'transparent');
+    const sub = await rpc.getBlockSubsidy(rec.height);
+    const minerZat = Math.round(Number(sub.miner) * atomic);
+    check(
+      '11e the amount on screen is what the chain actually paid, fees included',
+      rec.paidZat >= minerZat,
+      `coinbase paid ${rec.paidZat / atomic} SWM, node states a ${minerZat / atomic} SWM subsidy share`
+    );
+    check('11f a fresh reward is maturing, never spendable', st2.rewards.maturingZat > 0 && st2.rewards.spendableZat === 0,
+      `maturing ${st2.rewards.maturingZat / atomic}, spendable ${st2.rewards.spendableZat / atomic}`);
+    check('11g maturity counts down from the network’s 100 confirmations',
+      st2.rewards.nextMaturesInBlocks != null && st2.rewards.nextMaturesInBlocks <= 100,
+      `${st2.rewards.nextMaturesInBlocks} blocks to go`);
+  }
+
+  const stopped = await engine.stopMining();
+  check('11h stopping the standard miner leaves the node running', stopped.ok === true && engine.node.running === true);
+  void before;
 }
 
 let exitCode = 1;

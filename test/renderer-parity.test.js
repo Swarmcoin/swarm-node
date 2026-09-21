@@ -77,6 +77,20 @@ test('the three destination addresses are P2SH, or the node would panic', () => 
   assert.strictEqual(total, 20, 'the three allocations are 8 + 4 + 8 = 20%, leaving 80% to the miner');
 });
 
+test('the golden fixture survived git unaltered', () => {
+  // A byte-for-byte comparison is worthless if git rewrites the bytes. On a
+  // Windows runner it will check this file out with CRLF unless .gitattributes
+  // forbids it, and then every single line "differs" (seen for real in run
+  // 35634666251). Catch that here, where the message says what happened,
+  // rather than in the comparison below, where it looks like a content bug.
+  const raw = fs.readFileSync(FIXTURE);
+  assert.ok(!raw.includes(0x0d), 'the fixture must have LF line endings; check .gitattributes');
+  const prov = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'canonical-provenance.json'), 'utf8'));
+  const sha = require('crypto').createHash('sha256').update(raw).digest('hex');
+  assert.strictEqual(sha, prov.fixture.sha256, 'the fixture does not match its recorded SHA-256');
+  assert.strictEqual(prov.genesis_hash, manifest.genesis.hash, 'the fixture was rendered from a different network manifest');
+});
+
 test('the generated network block matches the canonical renderer byte for byte', (t) => {
   if (!fs.existsSync(FIXTURE)) {
     t.skip(`no canonical fixture at ${FIXTURE}`);
@@ -102,4 +116,32 @@ test('the app defaults to the real ports and the real seed peer', () => {
   assert.match(toml, /listen_addr = "0\.0\.0\.0:18233"/);
   assert.match(toml, /initial_testnet_peers = \["seed\.swarm\.green:18233"\]/);
   assert.match(toml, /\[rpc\][\s\S]*listen_addr = "127\.0\.0\.1:18232"/);
+});
+
+test('the golden fixture is still what the real renderer produces (local only)', (t) => {
+  // In CI the planning repository does not exist, so the fixture IS the
+  // reference. On a machine that HAS it, re-render and compare, so a change to
+  // the renderer or the manifest cannot quietly leave this app behind.
+  const prov = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'canonical-provenance.json'), 'utf8'));
+  const renderer = 'D:/privacy/scripts/swarm/render_config.py';
+  const rendered = 'D:/privacy/network/swarm-testnet/rendered/zebra-local.toml';
+  if (!fs.existsSync(renderer) || !fs.existsSync(rendered)) {
+    t.skip(
+      'SKIPPED, AND THIS IS NOT A PASS: the canonical renderer is not on this machine, ' +
+      'so the fixture could not be re-verified. It was captured from render_config.py ' +
+      `sha256 ${prov.renderer.sha256} on ${prov.captured_utc}.`
+    );
+    return;
+  }
+  const crypto = require('crypto');
+  const rendererSha = crypto.createHash('sha256').update(fs.readFileSync(renderer)).digest('hex');
+  if (rendererSha !== prov.renderer.sha256) {
+    assert.fail(
+      `the canonical renderer has changed (sha256 ${rendererSha}, fixture captured from ${prov.renderer.sha256}). ` +
+      'Re-capture the fixture with scripts/embed-network.mjs and update canonical-provenance.json.'
+    );
+  }
+  const live = networkBlock(fs.readFileSync(rendered, 'utf8').replace(/\r\n/g, '\n'));
+  const golden = networkBlock(fs.readFileSync(FIXTURE, 'utf8'));
+  assert.strictEqual(golden, live, 'the golden fixture is stale: re-capture it from the renderer output');
 });

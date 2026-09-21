@@ -49,6 +49,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Does this build still say anything belonging to the earlier product, to
+      # upstream, or to the multilevel wording the owner has forbidden?
+      - name: String sweep (source)
+        run: npm run sweep
+
       - name: Unit tests
         run: npm test
 
@@ -185,6 +190,12 @@ jobs:
 
       - name: Build the installer and the portable zip
         run: npx electron-builder --win --publish never
+
+      # What ships is the bundle, not the source tree. The sibling wallet fork
+      # shipped with an unlock screen still reading "Zingo PC is locked"; this
+      # is the step that would have caught it there.
+      - name: String sweep (packaged app.asar)
+        run: node scripts/string-sweep.mjs release/win-unpacked/resources/app.asar
 
       - name: Checksums and release manifest
         shell: pwsh
