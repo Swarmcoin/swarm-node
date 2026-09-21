@@ -1,0 +1,71 @@
+{
+  "name": "swarm-node-client",
+  "version": "0.1.3",
+  "description": "SWARM node client — your machine joins the swarm, runs sandboxed AI compute, and earns ETH. Consent-first, one-click stop, nothing hidden.",
+  "main": "electron/main.js",
+  "author": "SWARM <hello@swarm.green>",
+  "homepage": "https://swarm.green",
+  "license": "MIT",
+  "scripts": {
+    "build:ui": "vite build",
+    "start": "npm run build:ui && electron .",
+    "dist": "npm run build:ui && electron-builder --win",
+    "dist:mac": "npm run build:ui && electron-builder --mac",
+    "dist:linux": "npm run build:ui && electron-builder --linux"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "ethers": "^6.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "network.swarm.node",
+    "productName": "SWARM Node",
+    "artifactName": "SWARM-Node-Setup.${ext}",
+    "publish": [
+      { "provider": "github", "owner": "brs-holding", "repo": "swarm-downloads", "releaseType": "release" }
+    ],
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "extraResources": [
+        { "from": "../engine/aiinfra-engine.exe", "to": "engine/aiinfra-engine.exe" }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": ["dmg", "zip"],
+      "artifactName": "SWARM-Node-mac-${arch}.${ext}",
+      "identity": null,
+      "extraResources": [
+        { "from": "../engine/aiinfra-engine", "to": "engine/aiinfra-engine" }
+      ]
+    },
+    "linux": {
+      "category": "Utility",
+      "target": ["AppImage", "deb"],
+      "artifactName": "SWARM-Node-linux-${arch}.${ext}",
+      "extraResources": [
+        { "from": "../engine/aiinfra-engine", "to": "engine/aiinfra-engine" }
+      ]
+    }
+  }
+}
