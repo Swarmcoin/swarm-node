@@ -1,21 +1,23 @@
 {
-  "name": "swarm-node-client",
-  "version": "0.1.3",
-  "description": "SWARM node client — your machine joins the swarm, runs sandboxed AI compute, and earns ETH. Consent-first, one-click stop, nothing hidden.",
+  "name": "swarm-node",
+  "version": "0.2.0-testnet.1",
+  "description": "SWARM Node \u00e2\u20ac\u201d run a full node of the SWARM testnet and mine with one click. Consent-first, one-click stop, nothing runs hidden.",
   "main": "electron/main.js",
-  "author": "SWARM <hello@swarm.green>",
+  "author": "SWARM <swarmofficial@atomicmail.io>",
   "homepage": "https://swarm.green",
   "license": "MIT",
+  "private": true,
   "scripts": {
+    "lint": "node scripts/lint.mjs",
+    "test": "node --test test/*.test.js",
+    "check": "npm run lint && npm test",
     "build:ui": "vite build",
     "start": "npm run build:ui && electron .",
     "dist": "npm run build:ui && electron-builder --win",
-    "dist:mac": "npm run build:ui && electron-builder --mac",
-    "dist:linux": "npm run build:ui && electron-builder --linux"
+    "binaries:manifest": "node scripts/make-binaries-manifest.mjs",
+    "integration": "node scripts/integration-headless.mjs"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9",
-    "ethers": "^6.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -26,46 +28,57 @@
     "vite": "^5.4.11"
   },
   "build": {
-    "appId": "network.swarm.node",
+    "appId": "green.swarm.node",
     "productName": "SWARM Node",
-    "artifactName": "SWARM-Node-Setup.${ext}",
-    "publish": [
-      { "provider": "github", "owner": "brs-holding", "repo": "swarm-downloads", "releaseType": "release" }
-    ],
+    "artifactName": "SWARM-Node-${version}-${os}-${arch}.${ext}",
+    "copyright": "Copyright (c) 2026 SWARM. MIT licence.",
     "files": [
       "electron/**/*",
       "dist/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map"
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
-      "target": "nsis",
-      "extraResources": [
-        { "from": "../engine/aiinfra-engine.exe", "to": "engine/aiinfra-engine.exe" }
-      ]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "SWARM Node",
+      "uninstallDisplayName": "SWARM Node (SWARM testnet)",
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false
     },
-    "mac": {
-      "category": "public.app-category.utilities",
-      "target": ["dmg", "zip"],
-      "artifactName": "SWARM-Node-mac-${arch}.${ext}",
-      "identity": null,
-      "extraResources": [
-        { "from": "../engine/aiinfra-engine", "to": "engine/aiinfra-engine" }
-      ]
-    },
-    "linux": {
-      "category": "Utility",
-      "target": ["AppImage", "deb"],
-      "artifactName": "SWARM-Node-linux-${arch}.${ext}",
-      "extraResources": [
-        { "from": "../engine/aiinfra-engine", "to": "engine/aiinfra-engine" }
-      ]
-    }
+    "asarUnpack": [
+      "electron/resources/**"
+    ]
   }
 }
