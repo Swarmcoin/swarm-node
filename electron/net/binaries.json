@@ -1,0 +1,15 @@
+{
+  "_comment": "SHA-256 of the binaries this build is allowed to run. Written by scripts/make-binaries-manifest.mjs.",
+  "generated_at": "2026-09-21T17:08:06.018Z",
+  "platform": "win32",
+  "zebrad": {
+    "file": "zebrad.exe",
+    "sha256": "b6ea39096b99debd64b248789d47c8a3a94afea5541e3a75f896b552ac61c477",
+    "bytes": 84311552
+  },
+  "miner": {
+    "file": "privacy-miner.exe",
+    "sha256": "e6e16810e5f01688a668d80d11be689c278d2df3b3c5d35d25667b668c35123a",
+    "bytes": 7673344
+  }
+}

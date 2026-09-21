@@ -1,0 +1,221 @@
+{
+  "schema": "swarm-network-manifest/1",
+  "status": "Engineering testnet definition. Not a mainnet launch, not an audit, not an authorization for any irreversible financial action.",
+  "normative_sources": [
+    "specs/ECONOMICS.md v0.4 (reward allocation and monetary base)",
+    "docs/HANDOVER-PLAN.md section 0 and section 4 (owner decisions)",
+    "network/swarm-testnet/RECIPE.md (how the genesis block was produced)"
+  ],
+  "identity": {
+    "chain": "SWARM",
+    "ticker": "SWM",
+    "reward_nickname": "honey",
+    "network_name": "SwarmTestnet",
+    "network_kind": "Testnet",
+    "network_magic": [
+      83,
+      87,
+      82,
+      77
+    ],
+    "network_magic_ascii": "SWRM",
+    "light_wallet_chain_label": "swarm-testnet",
+    "ticker_note": "Coin ticker settled by the owner's style guide, 2026-09-21. The chain and network names stay SWARM / SwarmTestnet. A label only: nothing about the genesis or consensus depends on it."
+  },
+  "consensus": {
+    "implementation": "Zebra 6.3.0, configured Testnet, unmodified consensus and cryptography",
+    "proof_of_work": "Equihash 200,9, inherited and unchanged",
+    "disable_pow": false,
+    "checkpoints": false,
+    "target_difficulty_limit": "07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "target_difficulty_limit_note": "The upstream Testnet bound. An easier limit can overflow the 17-target difficulty average.",
+    "difficulty_adjustment": "inherited Zcash per-block retarget, unchanged",
+    "target_spacing_seconds": 75,
+    "coinbase_maturity_blocks": 100,
+    "activation_heights": {
+      "BeforeOverwinter": 1,
+      "Overwinter": 1,
+      "Sapling": 1,
+      "Blossom": 1,
+      "Heartwood": 1,
+      "Canopy": 1,
+      "NU5": 1,
+      "NU6": 1,
+      "NU6.1": 1,
+      "NU6.2": 1,
+      "NU6.3": 1
+    }
+  },
+  "genesis": {
+    "hash": "045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28",
+    "time_unix": 1789992000,
+    "time_utc": "2026-09-21T12:00:00Z",
+    "compact_target": "2007ffff",
+    "start_nonce": "0000000000000000000000000000000000000000000000000000000000000000",
+    "upstream_fixture": "zebra-test/src/vectors/block-test-0-000-000.txt",
+    "upstream_fixture_hash": "05a60a92d99d85997cce3b87616c089f6124d7342af37106edc76126334a2c38",
+    "hex_file": "genesis.hex",
+    "generator_manifest_file": "genesis-manifest.json",
+    "spendable_outputs": 0,
+    "premine": "none; upstream excludes genesis outputs from the UTXO set",
+    "nonce": "0000000000000000000000000000000000000000000000000000000000000001",
+    "hex_file_sha256": "1d2ffff8cbcb872167cc5d7d30f82d62aa997e45a0d82dafe9f1da053a6e0d6f",
+    "block_sha256": "e5f56bd73160031807e3fc105bb2cf48d4368a5726eee8f1b198540d1a8c22d6",
+    "generator": {
+      "tool": "privacy-miner genesis (branch swarm-tools of brs-holding/privacy-zebra)",
+      "commit": "103184e96",
+      "workflow_run": "https://github.com/brs-holding/privacy-zebra/actions/runs/35626325459",
+      "binary_sha256": "e6e16810e5f01688a668d80d11be689c278d2df3b3c5d35d25667b668c35123a",
+      "reproductions": 4,
+      "reproduction_note": "Four runs of the checksum-verified CI binary into four fresh folders, all producing byte-identical genesis.hex (sha256 1d2ffff8cbcb872167cc5d7d30f82d62aa997e45a0d82dafe9f1da053a6e0d6f) and identical generator manifests. The installed file was then verified independently in pure Python, with no Rust involved: the 1487-byte header decodes to version 4, an all-zero previous-block hash, the upstream merkle root, time 1789992000, bits 2007ffff, nonce ...0001 and a 1344-byte Equihash solution, and its double-SHA256 in display order is the recorded genesis hash.",
+      "independent_verification": {
+        "method": "pure-Python decode of the installed genesis.hex and recomputation of SHA256d(header)",
+        "header_time_unix": 1789992000,
+        "header_time_utc": "2026-09-21T12:00:00Z",
+        "bits_display_order": "2007ffff",
+        "nonce": "0000000000000000000000000000000000000000000000000000000000000001",
+        "recomputed_block_hash": "045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28",
+        "raw_block_sha256": "e5f56bd73160031807e3fc105bb2cf48d4368a5726eee8f1b198540d1a8c22d6",
+        "serialized_bytes": 1692
+      },
+      "accepted_by_a_node": "Submitted through zebrad 6.3.0's own submitblock; the node reported it as the block at height 0 and then mined and accepted block 1 and block 2 immediately. Evidence: docs/swarm-genesis-block1-proof-2026-09-21.json"
+    },
+    "time_rule": "The header time must be in the PAST when the network starts. A block's time must exceed the median time past of its ancestors, and for block 1 that median is the genesis time, so a future genesis time blocks block 1 until the wall clock passes it.",
+    "supersedes": {
+      "hash": "06b0b56c0dcf8695df0192439b73038006c48e3b1a7b907ecee69ef412d440fc",
+      "time_unix": 1790035200,
+      "reason": "its header time was in the future, which would have blocked block 1 until 2026-09-22 00:00:00 UTC",
+      "archived_in": "network/swarm-testnet/superseded-2026-09-22T0000Z/",
+      "never_launched": true
+    },
+    "hex": "040000000000000000000000000000000000000000000000000000000000000000000000db4d7a85b768123f1dff1d4c4cece70083b2d27e117b4ac2e31d087988a5eac40000000000000000000000000000000000000000000000000000000000000000401cb16affff07200000000000000000000000000000000000000000000000000000000000000001fd4005001e60cfb9c0d53f33ce95300463a2762bebd5d1a7048ffceb5a5302ecce3d43235f432535d10e94cec00050fd09a641315d32aa5275454a47d127f013da0403b3f3baafc54cd5946060cd591c56dd8a7f51fe73008d5d1343859dfbd4bb824c45b3ef40da9e190086073efc8ad2e050a5d7a380986a7232d0ffee7ea7ef2ccbaf8c89eb5aa9929653d9363e15e245efbbfea4558584839d61b235af7556913d6ebe867b5597a7ff02782e83124fadee929d629c76caf21b1a7938dbba246782eb8d0a5c50ab5cf3191743caa9b8781e53890a2ca4a33503074fe49f262c4978f041be5b5da16d195c3f4f79962f4f374fc1f2c9c03fbeed08ba152c07e3fa8eccd7a6fff8653179cfd5bbd72139ba4f62255dc5d5b80ab11bfc05835284dfdbccfec86a04452b075778f6abc27df33e954886cd49bd9a7f3b093a4600de04a6e33263372f79d80c728acf721c5f4e9b011f4642e873e675f81cf0e8267fa62981461d48e826c24f849099906b79eef7273ff76013e7e1ff499303d88e5bc5943cb3cc51c78444eecd35e63c3c2141059d08511383410e74ec40fe2721cc28c9d327b65303d860efd710bc3f8363a0835a0e05b153af9cd4b0217eb7c9bb254a39c9ab623b09e4dcbda872710dc5080bef65e4140968c53b70e6dc215a0ef7c758761249134b0d682e600ba758966c4ff63cda134d5cf1b20161141af2416a3a82dbb1028334fe44e7470e34d229473610ea163051044ef51e61cde4be47fb3b647016b0cc6ca5605f0f24b961e33ff66ff0b1d972cb622e9a756a6b3b3f43ef71b644b055e345dcd11454ef1203c8a245c8c8a1cc99d4336633b389e68354587b168e5406bd4e3758f13544de5c672d31a18d31e0ad30509f18ad55215319d7734cdd7c4ce5d2db4f42393a2f4d059451c1e3601395856054b11350053abf0c004865fc1b81ca4309c631caa111166cb1610f775e36169dae980f4a25b9131517f0d9185a7c44ffb8ef1f5b9a36f9a64dc39c68c5fb53c8f78af85b7db939213acf6221c9c34dd3c947c814ec480ef2b138faaa043320f0d112b8c7a8f950a9458bf2e4d19d0a58673dd85c02a75d85dde349ebe0d57853df4755ff1cac0ecee99a41543499d68131f1d1acfe28dac586ef4237b6ecc9dea7b2c9f81583f3a4c664ca261dd22fbc10853762ffe16e87b0c1552e5c30ca11c295d8648367d2b3478062660bff8a980370f468a630c8f45ff21f8401ee2922fc99411004650e7b983972a7d7c82f374f7e67acabc1635f32c4930bdfae45d04bd5932819b33a8bf0195b051e65c651195cb0a612a59285d655091637fa7aec77eb67669bda7f946e664cbfd1e62bb85415685d5de1cb3553301ef2ad078cdddf828c6b7e0f08942b3e9d81cee753a2f030b6c9d67cfee00241df52a81f555588f231ebd8dc0f34f0d4cfa53d0df4709270840e503bef994ced5de3833f427f7c4d287e0c2eb18f7c07a94ff713dc5e96c738e31fd9c1665166254768e58b55ca27e061f69f6aef255c4c200c97d61e6a96ee0ce4008617c5f88ffb30bc5d89753531dfa375d0bbfbc22963790d6f0a452b1ecb3b6c15c73390fc8b3e15816003bed1f8354a3ff09624a030863ded15e077457ed24abd50e83a7704d2f8684e0573cc948f0b155c64ae84074e736439811e53d3b108206cdc66c2dc2d7a5f534e99d981d620a25c79b50b443cc48184f43294a3829d3bf4da1fee9c3fb2bc645294dc5d34244dc93d56dd35fb82a361aafcf89710771716c3a8a10d6a4053adddc91436650f1ba4e61aad5e9a2edbae4f8eda644e91ced47e68dfd4b86e3384dbb1751a5fbfaa1163882dff79f0ea5d1020724d2ab6d350d9bc9326c92638e7eadb35ee94d410a70101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff071f0104455a6361736830623963346565663862376363343137656535303031653335303039383462366665613335363833613763616331343161303433633432303634383335643334ffffffff010000000000000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000",
+    "hex_sha256": "1d2ffff8cbcb872167cc5d7d30f82d62aa997e45a0d82dafe9f1da053a6e0d6f",
+    "hex_note": "The genesis block bytes. A fresh node normally receives block 0 from a peer; Zebra only inserts genesis by itself on Regtest. When no peer has served it, SWARM Node hands these bytes to its own node once and checks the resulting hash."
+  },
+  "economics": {
+    "source_spec": "specs/ECONOMICS.md v0.4",
+    "atomic_unit_per_coin": 100000000,
+    "era0_block_reward_coins": 6.25,
+    "miner_percent": 80,
+    "miner_note": "The miner receives the remainder of the subsidy after the three allocations, plus all transaction fees.",
+    "slow_start_interval": 0,
+    "pre_blossom_halving_interval": 840000,
+    "halving_interval_blocks": 1680000,
+    "extend_funding_stream_addresses_as_required": true,
+    "lockbox_disbursements": [],
+    "deferred_slot_used": false,
+    "funding_stream_height_range": {
+      "start": 1,
+      "end": 50399999,
+      "end_is_exclusive": true,
+      "note": "One range covers the whole emission schedule: every block with a non-zero reward."
+    },
+    "recipients": [
+      {
+        "label": "Core Development",
+        "upstream_slot": "ECC",
+        "upstream_rpc_name_post_nu6": "Electric Coin Company",
+        "numerator": 8,
+        "percent": 8,
+        "era0_coins_per_block": 0.5,
+        "era0_zatoshi_per_block": 50000000,
+        "address": "t2DGVURG5tAyXXSkj85JV5xbvTobYv7H99n",
+        "address_type": "testnet P2SH multisig (t2...)",
+        "redeem_script": "512103da07dbf168fc89ca8c810357c72720b0e896251f5bf512f5adf859bf324a911e51ae",
+        "public_keys": [
+          "03da07dbf168fc89ca8c810357c72720b0e896251f5bf512f5adf859bf324a911e"
+        ],
+        "signing_threshold": "1 of 1",
+        "key_label": "core-development"
+      },
+      {
+        "label": "Grants & Ecosystem",
+        "upstream_slot": "MajorGrants",
+        "upstream_rpc_name_post_nu6": "Zcash Community Grants NU6",
+        "numerator": 4,
+        "percent": 4,
+        "era0_coins_per_block": 0.25,
+        "era0_zatoshi_per_block": 25000000,
+        "address": "t2LVPzRYpZ4QtRRmQMS1zWUmG7TZaYcMjBR",
+        "address_type": "testnet P2SH multisig (t2...)",
+        "redeem_script": "512102e1f6e9a63903e8c59a8e1082a0c5ccb25239902757e695ba56ebff419ca86ae951ae",
+        "public_keys": [
+          "02e1f6e9a63903e8c59a8e1082a0c5ccb25239902757e695ba56ebff419ca86ae9"
+        ],
+        "signing_threshold": "1 of 1",
+        "key_label": "grants-ecosystem"
+      },
+      {
+        "label": "Community & Development Reserve",
+        "upstream_slot": "ZcashFoundation",
+        "upstream_rpc_name_post_nu6": "Zcash Foundation",
+        "numerator": 8,
+        "percent": 8,
+        "era0_coins_per_block": 0.5,
+        "era0_zatoshi_per_block": 50000000,
+        "address": "t2UHhsicXnapNJrfewHqgwXef5HDwCHd7wk",
+        "address_type": "testnet P2SH multisig (t2...)",
+        "redeem_script": "512102eeb4346fe5e3701291585adf20f8d7e67e8e88d5078a0eebbb6e21c23cd6406051ae",
+        "public_keys": [
+          "02eeb4346fe5e3701291585adf20f8d7e67e8e88d5078a0eebbb6e21c23cd64060"
+        ],
+        "signing_threshold": "1 of 1",
+        "key_label": "community-dev-reserve"
+      }
+    ],
+    "immutability": "The percentages are part of the network definition every node loads. There is no admin key, vote, on-chain parameter or RPC that can change them. A destination can only change through a protocol upgrade that participants adopt together.",
+    "rpc_naming_note": "getblocksubsidy prints the upstream slot names. ECC is Core Development, MajorGrants is Grants & Ecosystem, ZcashFoundation is the Community & Development Reserve."
+  },
+  "ports": {
+    "public_p2p": 18233,
+    "public_p2p_note": "Zebra's default Testnet P2P port. Other ports only produce warnings, but the default keeps newcomers' configuration empty.",
+    "rpc": 18232,
+    "rpc_note": "Loopback only. The node RPC is never exposed publicly; cookie authentication stays enabled.",
+    "lightwallet_grpc": 9067,
+    "lightwallet_grpc_note": "Zaino, behind TLS on the public server."
+  },
+  "seed_peers": [
+    "seed.swarm.green:18233"
+  ],
+  "seed_peers_note": "Placeholder. There is no DNS seeder for custom networks, so this is a static name with one A record per seed node. Zebra makes one outbound connection per IP, so a second seed needs its own public IP.",
+  "destination_addresses": {
+    "state": "generated 2026-09-21 on the owner's PC",
+    "shape": "one secp256k1 key per destination (1-of-1 multisig redeem script), owner decision of 2026-09-21; multisig is deferred to a future mainnet",
+    "tool": "swarm-keytool, branch swarm-tools @ 103184e96",
+    "workflow_run": "https://github.com/brs-holding/privacy-zebra/actions/runs/35626325459",
+    "key_files": "D:/privacy/.runtime/swarm-testnet/destinations/<label>.keys.json (git-ignored, ACL restricted to the owner and SYSTEM)",
+    "requirement": "Every recipient must be a testnet P2SH address. zebra-consensus/src/block/check.rs asserts 'address must be P2SH' and the node panics on a tm.../t1.../t3... address.",
+    "custody": "Whoever holds a key file controls that destination's coins. If a key file is lost the coins paid to that destination can never be spent. Spending from P2SH is not supported by the desktop wallet or Zallet today, so until a spending path is demonstrated these balances are reported as received and visible, not as spendable.",
+    "see": "network/swarm-testnet/DESTINATIONS.md"
+  },
+  "operations": {
+    "baseline_miner": {
+      "address": "t2Li46A4YNFqRDvdKA212w7DtsLkbGMG2xU",
+      "redeem_script": "512103c1fc49d0a4790da217b6046582ec1a19ed73fa795813daeb332960f3622c23f651ae",
+      "public_key": "03c1fc49d0a4790da217b6046582ec1a19ed73fa795813daeb332960f3622c23f6",
+      "signing_threshold": "1 of 1",
+      "key_label": "baseline-miner",
+      "purpose": "payout of the project's always-on one-thread miner on the seed server; NOT part of the consensus rules and NOT one of the three allocation destinations; the owner may rotate it to a personal wallet address after launch",
+      "key_file": "D:/privacy/.runtime/swarm-testnet/destinations/baseline-miner.keys.json",
+      "generated": "2026-09-21 with swarm-keytool.exe sha256 0050572810dc81efd8724b0d90dbbb8ca51eecbefeb5e2cbe52f97bd7c4c9660",
+      "set_in_config": "[mining].miner_address on the seed node only; render with render_config.py --miner-address --internal-miner"
+    }
+  },
+  "_embedded_by": "scripts/embed-network.mjs — SWARM Node",
+  "_embedded_from": "D:/privacy/network/swarm-testnet/manifest.json",
+  "_embedded_at": "2026-09-21",
+  "sync_gate": {
+    "min_peers": 1,
+    "max_tip_age_seconds": 5400,
+    "max_tip_age_note": "Target spacing is 75 s, but a young testnet with little hash power has long gaps. 90 minutes is loose enough not to nag and tight enough to catch a node that is really behind."
+  },
+  "links": {
+    "website": "https://swarm.green",
+    "explorer": "https://explore.swarm.green",
+    "swarm_map": "https://swarm.green/#map",
+    "x": "https://x.com/swarm_coin",
+    "source": "https://github.com/brs-holding"
+  },
+  "contact_email": "swarmofficial@atomicmail.io",
+  "channels_note": "Set by the owner on 2026-09-21. No other account or address speaks for the project. The project never asks for recovery phrases, private keys or payments through any channel."
+}
