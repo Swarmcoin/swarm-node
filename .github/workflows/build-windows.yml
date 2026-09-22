@@ -279,10 +279,54 @@ jobs:
             $old = gh release view $tag -R ${{ github.repository }} --json assets -q '.assets[].name' 2>$null
             foreach ($a in $old) { if ($a) { gh release delete-asset $tag $a -R ${{ github.repository }} --yes 2>$null } }
           }
+
+          # The release text is DERIVED FROM release-manifest.json, never from
+          # the variables of whichever run happened to create the release. The
+          # draft for testnet.1 said "commit 71fe7b1, run 35677791304" while its
+          # manifest said 2b6cb6e / 35678117439, because a later run replaced
+          # the assets and left the first run's words behind. Now they cannot
+          # disagree: both come from the file that ships beside the installer.
+          $m = Get-Content out/release-manifest.json -Raw | ConvertFrom-Json
+          $sums = (Get-Content out/SHA256SUMS -Raw).Trim()
+          $notes = @"
+**NOT AUDITED AND NOT PUBLISHED.** A draft build for review.
+
+| | |
+| --- | --- |
+| Version | ``$($m.version)`` |
+| Commit | ``$($m.git_commit)`` |
+| Built | $($m.built_at_utc) |
+| Workflow run | $($m.workflow_run) |
+| Network | $($m.network.name), genesis ``$($m.network.genesis)`` |
+| Seed | $($m.network.seeds -join ', ') |
+| Signed | no — Windows SmartScreen will warn |
+| Automatic updates | off |
+
+Bundled programs, verified against the hashes their own builds produced:
+
+``````
+zebrad.exe         $($m.bundled_binaries.zebrad.sha256)
+privacy-miner.exe  $($m.bundled_binaries.miner.sha256)
+``````
+
+Downloads:
+
+``````
+$sums
+``````
+
+Everything above is read from ``release-manifest.json``, which ships with the
+files, so this text and the manifest cannot disagree.
+"@
+          $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          [IO.File]::WriteAllText($notesFile, $notes, (New-Object Text.UTF8Encoding $false))
+
           if (-not $existing) {
             gh release create $tag -R ${{ github.repository }} --draft --prerelease `
-              --title "SWARM Node $version (draft — not published)" `
-              --notes "Draft build from commit ${{ github.sha }}, workflow run ${{ github.run_id }}. NOT AUDITED AND NOT PUBLISHED. Checksums are in SHA256SUMS; what went into the build is in release-manifest.json."
+              --title "SWARM Node $version (draft — not published)" --notes-file $notesFile
+          } else {
+            gh release edit $tag -R ${{ github.repository }} `
+              --title "SWARM Node $version (draft — not published)" --notes-file $notesFile
           }
           gh release upload $tag -R ${{ github.repository }} --clobber (Get-ChildItem out -File | ForEach-Object { $_.FullName })
           Write-Host "draft release: https://github.com/${{ github.repository }}/releases/tag/$tag"
