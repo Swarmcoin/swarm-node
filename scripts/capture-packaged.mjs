@@ -239,7 +239,14 @@ try {
   await waitFor('/mainnet unified address/i', 10000, 'the offline format complaint');
   await step('payout-format-rejected-offline');
 
-  await type('tmJymvcUCn1ctbghvTJpXBwHiMEB8P6wxNV');
+  // The project's baseline-miner address, not Zebra's default test one.
+  //
+  // An earlier capture mined 12 blocks to tmJymvcUCn1ctbghvTJpXBwHiMEB8P6wxNV
+  // — Zebra's documented default, whose key nobody holds — so 60 SWM went
+  // somewhere nobody can spend and the server agent saw an unattributable
+  // "third miner". A harness that mines on the live chain pays the project.
+  const PAYOUT = process.env.SWARM_HARNESS_PAYOUT || 't2Li46A4YNFqRDvdKA212w7DtsLkbGMG2xU';
+  await type(PAYOUT);
   await waitFor('/Looks right/i', 10000, 'the offline format verdict');
   await step('payout-format-ok-node-not-asked-yet');
 
