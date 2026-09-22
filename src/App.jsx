@@ -112,6 +112,7 @@ export default function App() {
     return (
       <div className="app">
         <div className="main">
+          {cfg.testRun ? <div className="testrun-strip">TEST RUN — do not use — this window belongs to an automated check</div> : null}
           <div className="testnet-strip">
             <Mark size={16} />
             <span><b>{state.network.name}</b> · engineering testnet. Coins have no value.</span>
@@ -178,6 +179,7 @@ export default function App() {
       </aside>
 
       <div className="main">
+        {cfg.testRun ? <div className="testrun-strip">TEST RUN — do not use — this window belongs to an automated check</div> : null}
         <div className="testnet-strip">
           <span><b>{state.network.name}</b> · engineering testnet. Coins have no value and the chain may restart.</span>
         </div>

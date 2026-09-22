@@ -373,3 +373,17 @@ input[type='range'] { width: 100%; accent-color: var(--orange); }
   .swarmmap-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .swarmmap-key { display: none; }
 }
+
+/* A harness window says so on every single screen. The owner found one on the
+   desktop, took it for the product and tried to mine with it. */
+.testrun-strip {
+  background: var(--red);
+  color: #2A0505;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-align: center;
+  padding: 6px var(--sp-xl);
+  text-transform: uppercase;
+}

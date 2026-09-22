@@ -38,14 +38,28 @@ function candidates(name) {
   return out;
 }
 
+/**
+ * The SHA-256 baseline, read from inside the asar.
+ *
+ * It must NOT go through unpackedPath. Only electron/resources/** is unpacked
+ * (asarUnpack), so rewriting "app.asar" to "app.asar.unpacked" for this file
+ * pointed at a path that does not exist. loadBaseline then returned {}, every
+ * binary looked unpinned, and a PACKAGED build — where unpinned binaries are
+ * refused — reported "privacy-miner is not bundled with this build" while the
+ * file sat right there in resources/bin. The owner saw exactly that on the
+ * Mining page. Electron's fs reads straight out of the archive, so the plain
+ * path is the correct one; the unpacked path stays as a fallback for a build
+ * that does unpack it.
+ */
 function loadBaseline() {
-  const file = unpackedPath(path.join(__dirname, '..', 'net', 'binaries.json'));
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
+  const inAsar = path.join(__dirname, '..', 'net', 'binaries.json');
+  for (const file of [inAsar, unpackedPath(inAsar)]) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch { /* try the next one */ }
   }
+  return {};
 }
 
 /**

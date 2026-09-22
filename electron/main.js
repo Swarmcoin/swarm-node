@@ -112,6 +112,14 @@ function createWindow() {
       ? 'TEST RUN — do not use — SWARM Node harness'
       : 'SWARM Node',
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
+    // A harness window carries a red TEST RUN banner on every screen (see
+    // .testrun-strip) and is closed the moment a capture ends. Parking it
+    // off-screen was tried and does not work: an Electron window with no
+    // compositor surface cannot produce a frame at all, with or without
+    // fromSurface, so Page.captureScreenshot simply times out. A window that
+    // announces itself is the honest alternative to one that cannot be
+    // photographed.
+    ...(isTestRun ? { skipTaskbar: false } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -246,7 +254,8 @@ function registerIpc() {
     contactEmail: manifest.contact_email || null,
     channelsNote: manifest.channels_note || null,
     status: manifest.status,
-    updatesEnabled: false
+    updatesEnabled: false,
+    testRun: isTestRun
   }));
   handle('shell:setConsent', (v) => {
     const on = V.bool(v, 'consent');

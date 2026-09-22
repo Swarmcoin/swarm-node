@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { WebSocket } from './ws-min.mjs';
 
@@ -104,6 +105,7 @@ WARNING: ${productDir} exists. If THIS run created it, the build ignored`);
 }
 process.on('SIGINT', () => cleanup(1));
 
+const duplicates = [];
 let cdp;
 try {
   const page = await waitForTarget();
@@ -119,11 +121,29 @@ try {
     return r.result.value;
   };
 
+  // An occluded or background window stops painting, and captureScreenshot
+  // then returns the LAST frame it drew. That is how a previous run produced
+  // five byte-identical files covering five different screens. Bringing the
+  // target to the front forces a fresh frame; the window is parked off-screen
+  // by the app itself when SWARM_NODE_TEST_RUN=1, so nothing appears on the
+  // desktop. Every image is hashed, and a repeat is reported rather than
+  // quietly written.
+  const seen = new Map();
   const shot = async (name) => {
+    try { await cdp.send('Page.bringToFront'); } catch { /* not fatal */ }
+    await sleep(600);
     const r = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    const buf = Buffer.from(r.data, 'base64');
+    const md5 = crypto.createHash('md5').update(buf).digest('hex');
     const file = path.join(outDir, `${name}.png`);
-    fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
-    console.log(`  captured ${name}.png`);
+    fs.writeFileSync(file, buf);
+    if (seen.has(md5)) {
+      console.log(`  captured ${name}.png  *** IDENTICAL to ${seen.get(md5)} — the window did not repaint ***`);
+      duplicates.push(`${name} == ${seen.get(md5)}`);
+    } else {
+      seen.set(md5, name);
+      console.log(`  captured ${name}.png  (${(buf.length / 1024).toFixed(0)} KB, md5 ${md5.slice(0, 8)})`);
+    }
   };
 
   /** Click the first element whose visible text matches. */
@@ -140,6 +160,46 @@ try {
 
   await sleep(6000);   // let the first render and the engine's first tick land
 
+  /** Put text in the first text box the way a person would. */
+  const type = async (text) => evaluate(`
+    (() => {
+      const input = document.querySelector('input[type=text]');
+      if (!input) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(text)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()
+  `);
+
+  /** Wait until the page says something, or give up. */
+  const waitForText = async (pattern, ms) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      const hit = await evaluate(`${pattern}.test(document.body.innerText || '')`);
+      if (hit) return true;
+      await sleep(1500);
+    }
+    return false;
+  };
+
+  /** Click a tab in the rail. */
+  const tab = async (label, file, wait = 3500) => {
+    const ok = await evaluate(`
+      (() => {
+        const hit = [...document.querySelectorAll('.nav-item')]
+          .find((e) => (e.textContent || '').trim().toLowerCase().startsWith(${JSON.stringify(label.toLowerCase())}));
+        if (!hit) return false;
+        hit.click();
+        return true;
+      })()
+    `);
+    if (!ok) { console.log(`  (no tab "${label}")`); return false; }
+    await sleep(wait);
+    await shot(file);
+    return true;
+  };
+
   console.log('walking the app:');
   await shot('01-welcome');
 
@@ -147,7 +207,6 @@ try {
   await sleep(1200);
   await shot('02-consent');
 
-  // Tick every consent box, then show the enabled state before agreeing.
   await evaluate(`
     (() => {
       const boxes = [...document.querySelectorAll('.consent-list input[type=checkbox]')];
@@ -162,69 +221,55 @@ try {
   await sleep(2500);
   await shot('04-payout-empty');
 
-  // Type an address the way a person would, then let the node check it.
-  await evaluate(`
-    (() => {
-      const input = document.querySelector('input[type=text]');
-      if (!input) return false;
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'tmJymvcUCn1ctbghvTJpXBwHiMEB8P6wxNV');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
-    })()
-  `);
-  await sleep(800);
-  await shot('05-payout-typed');
+  // A wrong address, so the offline format check is on the record.
+  await type('u1thisisamainnetaddressnotatestnetone0234567');
+  await sleep(1400);
+  await shot('05-payout-format-invalid');
 
-  // No button here any more: the node checks by itself. Photograph the wait,
-  // then the confirmation when it lands.
-  await sleep(2500);
-  await shot('06-payout-waiting-for-node');
-  const confirmedBy = Date.now() + 90000;
-  while (Date.now() < confirmedBy) {
-    const ok = await evaluate("/checked by your node/i.test(document.body.innerText || '')");
-    if (ok) break;
-    await sleep(2000);
-  }
-  await shot('07-payout-confirmed-by-node');
+  // And a right one, accepted instantly on shape alone.
+  await type('tmJymvcUCn1ctbghvTJpXBwHiMEB8P6wxNV');
+  await sleep(1600);
+  await shot('06-payout-format-valid-node-not-asked');
+
+  // Start the node from the step itself and let it confirm by itself.
+  if (await clickText('start node')) console.log('  started the node from the payout step');
+  await sleep(4000);
+  await shot('07-payout-node-starting');
+  console.log(`  node confirmed the address: ${await waitForText('/checked by your node/i', 120000)}`);
+  await sleep(5000);   // the paint lags the DOM; 07 and 08 came out identical without this
+  await shot('08-payout-confirmed-by-node');
 
   if (!(await clickText('continue'))) console.log('  (Continue was disabled)');
   await sleep(3000);
-  await shot('08-machine-check');
+  await shot('09-machine-check');
 
   if (!(await clickText('go to my node'))) console.log('  (could not leave the machine check)');
-  await sleep(6000);
-  await shot('09-mining');
+  await sleep(8000);
+  await shot('10-mining-before-start');
 
-  // The other tabs are nav buttons in the rail.
-  const tab = async (label, file, wait = 3000) => {
-    const ok = await evaluate(`
-      (() => {
-        const hit = [...document.querySelectorAll('.nav-item')]
-          .find((e) => (e.textContent || '').trim().toLowerCase().startsWith(${JSON.stringify(label.toLowerCase())}));
-        if (!hit) return false;
-        hit.click();
-        return true;
-      })()
-    `);
-    if (!ok) { console.log(`  (no tab "${label}" in this build)`); return false; }
-    await sleep(wait);
-    await shot(file);
-    return true;
-  };
-
-  await tab('node', '10-node');
-  await tab('honey', '11-honey');
-  await tab('swarm map', '12-swarm-map', 9000);
-  if (await tab('settings', '13-settings', 3000)) {
-    // The About block is at the bottom of Settings.
+  await tab('node', '11-node-folder-and-pids');
+  await tab('honey', '12-honey');
+  await tab('swarm map', '13-swarm-map', 12000);
+  if (await tab('settings', '14-settings')) {
     await evaluate("(document.querySelector('.content') || {}).scrollTop = 99999");
-    await sleep(900);
-    await shot('14-settings-about');
+    await sleep(1000);
+    await shot('15-settings-about-and-channels');
   }
-  await tab('log', '15-log');
-  // Back to Mining for the held-back state with both heights on screen.
-  await tab('mining', '16-mining-gate-detail', 4000);
+  await tab('log', '16-log');
+
+  // Mining with real numbers, and Start if the gate lets us. Either way the
+  // screen is the evidence.
+  await tab('mining', '17-mining-gate-numbers', 5000);
+  console.log(`  mining ready: ${await waitForText('/Ready when you are/i', 45000)}`);
+  if (await clickText('start mining')) {
+    await sleep(10000);
+    await shot('18-mining-after-start');
+  } else {
+    console.log('  (Start mining was disabled; the held-back screen is the evidence)');
+    await shot('18-mining-still-held-back');
+  }
+  await tab('node', '19-node-while-running', 4000);
+
 
   console.log('\ndone');
   await cleanup(0);
