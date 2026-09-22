@@ -188,7 +188,7 @@ export default function App() {
   const running = m.on || n.running;
 
   return (
-    <div className="app">
+    <div className={`app${tour ? ' tour-open' : ''}`}>
       <aside className="rail">
         <div className="brand">
           <Mark size={30} />

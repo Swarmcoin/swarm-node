@@ -139,18 +139,26 @@ try {
   };
 
   const seen = new Map();
-  const shotRaw = async (name) => {
+  const shotRaw = async (name, atText = '') => {
     // No bringToFront: there is no window to bring anywhere, and pulling one
     // in front of the user is the thing this harness must never do.
     await sleep(400);
     const buf = await shots.take();
     const md5 = crypto.createHash('md5').update(buf).digest('hex');
     fs.writeFileSync(path.join(outDir, `${name}.png`), buf);
-    if (seen.has(md5)) {
-      console.log(`  ${name}.png  *** IDENTICAL to ${seen.get(md5)} ***`);
-      duplicates.push(`${name} == ${seen.get(md5)}`);
+    const prior = seen.get(md5);
+    if (prior) {
+      // Two identical pictures are a bug ONLY if the app was showing
+      // different things when they were taken. It is not always: the payout
+      // step can confirm the address between "waiting for your node" and the
+      // shutter, and then both shots really are of the same screen. What must
+      // never happen is a picture that does not match the state it is named
+      // after - which is what the DOM text catches.
+      const sameScreen = prior.at === atText;
+      console.log(`  ${name}.png  *** IDENTICAL to ${prior.name} ***${sameScreen ? ' (same screen: the app moved on before the shutter)' : ''}`);
+      if (!sameScreen) duplicates.push(`${name} == ${prior.name}, but the page had changed`);
     } else {
-      seen.set(md5, name);
+      seen.set(md5, { name, at: atText });
       console.log(`  ${name}.png  (${(buf.length / 1024).toFixed(0)} KB, md5 ${md5.slice(0, 8)})`);
     }
   };
@@ -187,7 +195,9 @@ try {
   let n = 0;
   const step = async (state) => {
     n += 1;
-    await shotRaw(`${String(n).padStart(2, '0')}-${state}--shows-${await pageName()}`);
+    let text = '';
+    try { text = await evaluate("(document.body.innerText || '').replace(/\s+/g, ' ').trim()"); } catch { /* mid-render */ }
+    await shotRaw(`${String(n).padStart(2, '0')}-${state}--shows-${await pageName()}`, text);
   };
 
   const click = async (text) => evaluate(`(() => {
@@ -298,12 +308,39 @@ try {
   console.log(`  gate line has live numbers: ${await waitFor('/your node:\\s*#\\d/', 300000, 'the gate line to show a real height')}`);
   await step('mining-gate-with-live-numbers');
 
-  const ready = await waitFor('/Ready when you are/i', 300000, 'the gate to open');
-  console.log(`  mining allowed: ${ready}`);
-  if (ready && (await click('start mining'))) {
-    await waitFor('/Stop mining/i', 40000, 'mining to start');
+  // The one-click start, as the owner would experience it. The button is never
+  // disabled now: while the node catches up it reads "Start mining when
+  // ready", and it becomes a plain "Start mining" when the gate opens. Watch
+  // the BUTTON, not a sentence elsewhere on the page - an earlier version of
+  // this walk waited five minutes for wording that no longer exists.
+  const buttonLabel = async () => evaluate(`(() => {
+    const b = document.querySelector('.card.glow .btn.big');
+    return b ? (b.innerText || '').replace(/\s+/g, ' ').trim() : '';
+  })()`).catch(() => '');
+
+  // While it is still catching up, arm it: this is the path most people take.
+  if (/when ready/i.test(await buttonLabel())) {
+    await step('mining-armable-while-catching-up');
+    if (await click('start mining when ready')) {
+      await sleep(1500);
+      await step('mining-armed-will-start-by-itself');
+    }
+  }
+
+  const gateBy = Date.now() + 300000;
+  let label = await buttonLabel();
+  while (Date.now() < gateBy && !/^.?\s*Start mining$/i.test(label) && !/Stop mining/i.test(label)) {
+    await sleep(3000);
+    label = await buttonLabel();
+  }
+  console.log(`  primary button now reads: ${JSON.stringify(label)}`);
+
+  // Armed runs start on their own; only press if it did not.
+  if (/Stop mining/i.test(label) || (await click('start mining'))) {
+    const started = await waitFor('/Stop mining/i', 60000, 'mining to start');
+    console.log(`  mining started: ${started}`);
     await sleep(5000);
-    await step('mining-after-start');
+    await step(started ? 'mining-after-start' : 'mining-did-not-start');
   } else {
     await step('mining-still-held-back');
   }

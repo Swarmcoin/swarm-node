@@ -409,7 +409,10 @@ input[type='range'] { width: 100%; accent-color: var(--orange); }
   background: rgba(255, 138, 31, .12); color: var(--orange);
   border: 1px solid rgba(255, 138, 31, .25);
 }
-.tour-body { margin-top: 10px; color: var(--ink-mid); }
+/* Capped, so the panel cannot grow tall enough to sit over the button it is
+   describing. It did, in the first capture: step 1 talks about the Start
+   button and covered half of it. */
+.tour-body { margin-top: 10px; color: var(--ink-mid); max-height: 30vh; overflow: auto; }
 .tour-body p { margin: 0 0 8px; line-height: 1.65; }
 .tour-body p:last-child { margin-bottom: 0; }
 .tour-body b { color: var(--ink-high); }
@@ -417,3 +420,6 @@ input[type='range'] { width: 100%; accent-color: var(--orange); }
 .tour-dots i { width: 16px; height: 3px; border-radius: 2px; background: var(--s2); }
 .tour-dots i.on { background: var(--orange); }
 .tour-foot { display: flex; align-items: center; gap: 6px; justify-content: center; margin-top: 8px; }
+/* While the tour is open, every page gets enough room below it that anything
+   the panel covers can be scrolled clear of it. */
+.app.tour-open .content { padding-bottom: 340px; }
