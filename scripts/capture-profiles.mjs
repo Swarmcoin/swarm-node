@@ -63,6 +63,17 @@ fs.mkdirSync(outDir, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const problems = [];
+
+// A long-lived process that stands in for a leftover daemon. The app's
+// detector asks two questions - is the recorded process alive, and is a node
+// holding this folder - and the RECORD path is the one being photographed
+// here, so a harmless sleeper is enough and no second daemon is needed.
+const holder = spawn(
+  process.execPath,
+  ['-e', 'setTimeout(() => {}, 10 * 60 * 1000)'],
+  { stdio: 'ignore' }
+);
+process.on('exit', () => { try { holder.kill(); } catch { /* gone */ } });
 const seen = new Map();
 
 // The leftovers, exactly as an abandoned run of an earlier build leaves them.
@@ -213,7 +224,7 @@ async function withProfile(name, seed, walk) {
       problems.push(`profile "${name}": the window was NOT hidden (${windowLine})`);
     }
 
-    await walk({ step, click, tab, evaluate, waitFor, sleep });
+    await walk({ step, click, tab, evaluate, waitFor, sleep, dataDir });
     await shots.stop();
   } finally {
     // Ask the app to close first, so the node it started is stopped by the
@@ -306,6 +317,91 @@ try {
       const blamed = await evaluate("/does not recognise that address/i.test(document.body.innerText || '')");
       if (blamed) problems.push('profile "address": a valid address was blamed while the node was stopped');
     });
+
+  // ---- foreign: another node is holding the chain folder ---------------
+  //
+  // N-8, reproduced. A daemon from an earlier version outlived its app and
+  // still had the chain database open, so the new one died on start and the
+  // app spun for ever. Here a stand-in process holds the folder instead, so
+  // the screen can be photographed without needing two real daemons.
+  await withProfile('foreign', DONE, async ({ step, click, evaluate, waitFor, sleep: nap, dataDir }) => {
+    await waitFor('/This machine/i', 30000, 'the dashboard');
+
+    // A process that looks, to the detector, exactly like a leftover daemon:
+    // the app's own record of a node it started and never stopped.
+    const record = path.join(dataDir, 'node.pid.json');
+    fs.writeFileSync(record, JSON.stringify({
+      pid: holder.pid, startedAt: Date.now() - 4 * 3600_000, appPid: 0, configPath: null
+    }, null, 2));
+
+    if (!(await click('start your node'))) problems.push('profile "foreign": no Start-your-node button');
+    const said = await waitFor('/earlier version is still running/i', 25000, 'the foreign-node explanation');
+    if (!said) problems.push('profile "foreign": the app did not report the other node');
+    await nap(700);
+    await step('mining-another-node-holds-the-folder');
+
+    const label = await evaluate(`(() => {
+      const b = document.querySelector('.card.glow .btn.big');
+      return b ? JSON.stringify({ label: (b.innerText || '').trim(), disabled: !!b.disabled }) : 'null';
+    })()`).catch(() => 'null');
+    console.log(`  primary button: ${label}`);
+    if (!/Stop it and continue/.test(String(label))) problems.push(`profile "foreign": the button reads ${label}`);
+    if (/"disabled":true/.test(String(label))) problems.push('profile "foreign": the button was disabled');
+
+    if (await click('stop it and continue')) {
+      await waitFor('/catching up|peers|Start mining|block \d/i', 40000, 'the node to come up afterwards');
+      await nap(2500);
+      await step('mining-after-stopping-the-other-node');
+    } else {
+      problems.push('profile "foreign": "Stop it and continue" could not be clicked');
+    }
+  });
+
+  // ---- exit: the daemon died, and the page must say why ------------------
+  //
+  // The daemon is killed from outside, the way a crash or a Task Manager
+  // would kill it. What is being photographed is that the Mining page reports
+  // a REASON and an enabled button rather than the spinner the owner saw. The
+  // exact database-lock wording is pinned by test/node-trouble.test.js using
+  // the daemon's own text from the owner's machine; it cannot be produced
+  // here any more, because the foreign-node check now catches that case
+  // before the daemon is ever started.
+  await withProfile('exit', DONE, async ({ step, click, evaluate, waitFor, sleep: nap, dataDir }) => {
+    await waitFor('/This machine/i', 30000, 'the dashboard');
+    if (!(await click('start your node'))) problems.push('profile "exit": no Start-your-node button');
+    await waitFor('/peers|catching up|block \d|Start mining/i', 40000, 'the node to come up');
+    await nap(2000);
+
+    const pid = await evaluate('(window.__swarmPid = null, null)').catch(() => null);
+    void pid;
+    const rec = path.join(dataDir, 'node.pid.json');
+    let daemon = null;
+    try { daemon = JSON.parse(fs.readFileSync(rec, 'utf8')).pid; } catch { /* reported below */ }
+    if (!Number.isInteger(daemon)) {
+      problems.push('profile "exit": the app did not record the daemon it started');
+      return;
+    }
+    console.log(`  killing the daemon (process ${daemon}) the way a crash would`);
+    try {
+      if (process.platform === 'win32') execFileSync('taskkill.exe', ['/PID', String(daemon), '/T', '/F'], { stdio: 'ignore' });
+      else process.kill(daemon, 'SIGKILL');
+    } catch { /* already gone */ }
+
+    const said = await waitFor('/stopped|could not|already using|Try starting/i', 30000, 'the reason on the Mining page');
+    if (!said) problems.push('profile "exit": the page said nothing about the node stopping');
+    await nap(900);
+    await step('mining-says-why-the-node-stopped');
+
+    const btn = await evaluate(`(() => {
+      const b = document.querySelector('.card.glow .btn.big');
+      const card = b && b.closest('.card.glow');
+      const why = card ? ((card.querySelector('.small.muted') || {}).innerText || '') : '';
+      return b ? JSON.stringify({ label: (b.innerText || '').trim(), disabled: !!b.disabled, why: why.trim() }) : 'null';
+    })()`).catch(() => 'null');
+    console.log(`  primary button: ${btn}`);
+    if (/"disabled":true/.test(String(btn))) problems.push('profile "exit": the button was disabled');
+    if (/"why":""/.test(String(btn))) problems.push('profile "exit": no reason was shown beside the button');
+  });
 
   const files = fs.readdirSync(outDir).filter((f) => f.endsWith('.png')).sort();
   console.log(`\n${files.length} screen(s) captured:`);
