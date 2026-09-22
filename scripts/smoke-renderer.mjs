@@ -42,6 +42,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket } from './ws-min.mjs';
 import { startShots } from './cdp-shot.mjs';
 import { stopApp } from './stop-app.mjs';
+import { resolveAppExe } from './app-path.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
@@ -50,10 +51,9 @@ const BASE_PORT = Number(process.env.SWARM_CDP_PORT) || 9411;
 const MOUNT_DEADLINE_MS = Number(process.env.SWARM_SMOKE_MOUNT_MS) || 15000;
 const HARD_DEADLINE_MS = Number(process.env.SWARM_SMOKE_DEADLINE_MS) || 240000;
 
-const exe = process.platform === 'win32'
-  ? path.join(unpacked, 'SWARM Node.exe')
-  : path.join(unpacked, 'swarm-node');
-if (!fs.existsSync(exe)) { console.error(`no packaged app at ${exe}`); process.exit(2); }
+// Windows, Linux and macOS each put it somewhere different; see app-path.mjs.
+const exe = resolveAppExe(unpacked);
+if (!exe) process.exit(2);
 fs.mkdirSync(artifactDir, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

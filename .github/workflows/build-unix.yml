@@ -1,0 +1,282 @@
+name: Build Linux and macOS packages
+
+# The same app as the Windows workflow, for the other two platforms.
+#
+#   SWARM-Node-<version>-linux-x86_64.AppImage   portable, one file
+#   swarm-node_<version>_amd64.deb               Debian and Ubuntu
+#   SWARM-Node-<version>-mac-arm64.dmg / .zip    Apple silicon
+#   SWARM-Node-<version>-mac-x64.dmg / .zip      Intel Macs
+#   SHA256SUMS, release-manifest.json            per platform
+#
+# It does NOT publish a GitHub Release. Everything lands on a DRAFT
+# pre-release of this private repository, exactly as the Windows build does,
+# and publishing is a deliberate act by somebody else.
+#
+# WHY A MATRIX AND NOT THREE FILES: the steps are identical apart from which
+# pinned binaries are fetched and which electron-builder target is asked for.
+# Three copies of the same fifteen steps is three places for them to drift.
+
+on:
+  workflow_dispatch:
+    inputs:
+      binaries_tag:
+        description: 'Pre-release tag holding the pinned node and miner'
+        required: false
+        default: 'vendored-binaries-1'
+      platforms:
+        description: 'Which to build: all, linux, mac-arm64, mac-x64'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: write        # read the vendored-binaries pre-release, write the draft
+  actions: read
+
+jobs:
+  build:
+    strategy:
+      # One platform failing must not cancel the others: a macOS runner being
+      # scarce is not a reason to lose a good Linux package.
+      fail-fast: false
+      matrix:
+        include:
+          - key: linux-x64
+            runs-on: ubuntu-22.04
+            builder: --linux
+            node_asset: zebrad-linux-x64
+            miner_asset: privacy-miner-linux-x64
+            node_sha: 17c5297c4f4fda72982f1d6c2e4f4682ea434390e87639108eaa0f9912948ffe
+            miner_sha: 740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6
+          - key: darwin-arm64
+            runs-on: macos-14
+            builder: --mac --arm64
+            node_asset: zebrad-darwin-arm64
+            miner_asset: privacy-miner-darwin-arm64
+            node_sha: 102b6ec3e6c8bee6ffcbce3c595ff31149ddf8b389aaed4ce065e76eee32ef38
+            miner_sha: b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a
+          - key: darwin-x64
+            runs-on: macos-13
+            builder: --mac --x64
+            node_asset: zebrad-darwin-x64
+            miner_asset: privacy-miner-darwin-x64
+            node_sha: PENDING
+            miner_sha: PENDING
+
+    name: ${{ matrix.key }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Is this platform asked for, and are its binaries built yet?
+        id: want
+        shell: bash
+        run: |
+          set -euo pipefail
+          want='${{ github.event.inputs.platforms }}'
+          [ -n "$want" ] || want=all
+          key='${{ matrix.key }}'
+          run_it=no
+          case "$want" in
+            all) run_it=yes ;;
+            linux) [ "$key" = linux-x64 ] && run_it=yes ;;
+            mac-arm64) [ "$key" = darwin-arm64 ] && run_it=yes ;;
+            mac-x64) [ "$key" = darwin-x64 ] && run_it=yes ;;
+          esac
+          # A platform whose pinned hashes are not known yet cannot be built
+          # honestly, so it is SKIPPED rather than built without a pin. This is
+          # a guard: it never fails a run. (A guard that fails the build was
+          # exactly the mistake in run 35684893551.)
+          if [ '${{ matrix.node_sha }}' = PENDING ] || [ '${{ matrix.miner_sha }}' = PENDING ]; then
+            echo "::notice::${key} has no pinned binary hashes yet, so it is skipped."
+            run_it=no
+          fi
+          echo "run=$run_it" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.want.outputs.run == 'yes'
+
+      - uses: actions/setup-node@v4
+        if: steps.want.outputs.run == 'yes'
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.want.outputs.run == 'yes'
+        run: npm ci
+
+      - name: Lint
+        if: steps.want.outputs.run == 'yes'
+        run: npm run lint
+
+      - name: String sweep (source)
+        if: steps.want.outputs.run == 'yes'
+        run: npm run sweep
+
+      - name: Unit tests
+        if: steps.want.outputs.run == 'yes'
+        run: npm test
+
+      # ---- the two binaries this app runs -------------------------------
+      #
+      # Fetched, never rebuilt here, so the thing that ships is the thing that
+      # was tested. They come from a pre-release of THIS private repository,
+      # because a private repo's token cannot read another repository's
+      # workflow artifacts. The SHA-256 gate below is what actually decides.
+      - name: Download the pinned binaries
+        if: steps.want.outputs.run == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ github.event.inputs.binaries_tag }}'
+          [ -n "$tag" ] || tag=vendored-binaries-1
+          mkdir -p resources/bin
+          gh release download "$tag" -R '${{ github.repository }}' \
+            -p '${{ matrix.node_asset }}' -p '${{ matrix.miner_asset }}' -D staging
+          ls -l staging
+
+      - name: Verify and place the binaries
+        if: steps.want.outputs.run == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p resources/bin
+          # The names the app looks for BEFORE the shipped rename, so the same
+          # manifest script handles every platform identically.
+          cp "staging/${{ matrix.node_asset }}"  resources/bin/zebrad
+          cp "staging/${{ matrix.miner_asset }}" resources/bin/privacy-miner
+          chmod +x resources/bin/zebrad resources/bin/privacy-miner
+
+          # swarm-keytool creates spending keys. It must never leave a build
+          # machine inside a miner. Make that impossible, not unlikely.
+          if ls resources/bin | grep -i keytool; then
+            echo "refusing to package a key tool"; exit 1
+          fi
+
+          sha() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+          for pair in "zebrad ${{ matrix.node_sha }}" "privacy-miner ${{ matrix.miner_sha }}"; do
+            set -- $pair
+            actual=$(sha "resources/bin/$1")
+            if [ "$actual" != "$2" ]; then
+              echo "$1 sha256 $actual does not match the pinned $2"; exit 1
+            fi
+            echo "$1 sha256 $actual OK"
+          done
+
+      - name: Record the binary hashes this build may run
+        if: steps.want.outputs.run == 'yes'
+        run: node scripts/make-binaries-manifest.mjs
+
+      - name: Build the renderer
+        if: steps.want.outputs.run == 'yes'
+        run: npm run build:ui
+
+      - name: Build the packages
+        if: steps.want.outputs.run == 'yes'
+        run: npx electron-builder ${{ matrix.builder }} --publish never
+
+      - name: String sweep (packaged app.asar)
+        if: steps.want.outputs.run == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          asar=$(find release -name app.asar -print -quit)
+          [ -n "$asar" ] || { echo "no app.asar was produced"; exit 1; }
+          node scripts/string-sweep.mjs "$asar"
+
+      # Does the packaged app actually SHOW anything? testnet.1 passed every
+      # other gate and then opened blank. On Linux there is no display on a
+      # runner, so the whole thing runs under a virtual one; the app's window
+      # is never shown either way (SWARM_NODE_HEADLESS).
+      - name: Renderer smoke test
+        if: steps.want.outputs.run == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir=$(find release -maxdepth 1 -type d \( -name 'linux-unpacked' -o -name 'mac' -o -name 'mac-arm64' \) -print -quit)
+          [ -n "$dir" ] || { echo "no unpacked build found"; ls -R release | head -40; exit 1; }
+          if [ "$RUNNER_OS" = macOS ]; then
+            # The unpacked mac build is an .app bundle; the executable is inside.
+            dir="$dir/SWARM Node.app/Contents/MacOS"
+          fi
+          echo "smoke-testing $dir"
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+            xvfb-run -a node scripts/smoke-renderer.mjs "$dir" smoke
+          else
+            node scripts/smoke-renderer.mjs "$dir" smoke
+          fi
+        timeout-minutes: 10
+
+      - name: Checksums and release manifest
+        if: steps.want.outputs.run == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # Only the files a PERSON downloads. A blanket copy sweeps in
+          # blockmaps, the unpacked tree and the app's own internals, which
+          # then appear on the release looking like things to install.
+          shopt -s nullglob
+          for f in release/*.AppImage release/*.deb release/*.dmg release/*.zip; do
+            cp "$f" out/
+          done
+          shopt -u nullglob
+          if [ -z "$(ls -A out)" ]; then
+            echo "electron-builder produced nothing to ship"; ls -R release | head -40; exit 1
+          fi
+          ls -l out
+
+          sha() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d" " -f1; else shasum -a 256 "$1" | cut -d" " -f1; fi; }
+          # LF endings, no trailing blank line, same shape as the Windows build.
+          : > out/SHA256SUMS
+          for f in $(ls out | grep -v "^SHA256SUMS$" | sort); do
+            printf "%s *%s\n" "$(sha "out/$f")" "$f" >> out/SHA256SUMS
+          done
+          cat out/SHA256SUMS
+
+          node scripts/make-release-manifest.mjs out ${{ matrix.key }}
+
+      # Primary delivery: a DRAFT pre-release of this private repository. Not
+      # published, not public, and not a product release.
+      #
+      # Each platform adds ITS OWN files to the one draft for this version and
+      # never deletes anybody else's, because three jobs share the tag. The
+      # Windows workflow clears the draft first; this one must not, or the
+      # second platform to finish would wipe the first.
+      - name: Add this platform's files to the draft release
+        if: steps.want.outputs.run == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="build-$version"
+          # SHA256SUMS and release-manifest.json are per platform, so they are
+          # renamed before upload. Two platforms uploading "SHA256SUMS" would
+          # silently overwrite one another.
+          mv out/SHA256SUMS "out/SHA256SUMS-${{ matrix.key }}"
+          mv out/release-manifest.json "out/release-manifest-${{ matrix.key }}.json"
+          ls -l out
+
+          if gh release view "$tag" -R '${{ github.repository }}' >/dev/null 2>&1; then
+            echo "adding to the existing draft $tag"
+          else
+            gh release create "$tag" -R '${{ github.repository }}' --draft --prerelease \
+              --title "SWARM Node $version (draft — not published)" \
+              --notes "**NOT AUDITED AND NOT PUBLISHED.** A draft build for review."
+          fi
+          gh release upload "$tag" -R '${{ github.repository }}' --clobber out/*
+          echo "draft release: https://github.com/${{ github.repository }}/releases/tag/$tag"
+
+      - name: Keep the smoke screenshots as evidence
+        uses: actions/upload-artifact@v4
+        if: always() && steps.want.outputs.run == 'yes'
+        continue-on-error: true
+        with:
+          name: smoke-${{ matrix.key }}
+          path: smoke
+          retention-days: 7

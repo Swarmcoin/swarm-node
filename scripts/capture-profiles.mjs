@@ -56,10 +56,9 @@ function freePort() {
   });
 }
 
-const exe = process.platform === 'win32'
-  ? path.join(unpacked, 'SWARM Node.exe')
-  : path.join(unpacked, 'swarm-node');
-if (!fs.existsSync(exe)) { console.error(`not found: ${exe}`); process.exit(2); }
+// Windows, Linux and macOS each put it somewhere different; see app-path.mjs.
+const exe = resolveAppExe(unpacked);
+if (!exe) process.exit(2);
 fs.mkdirSync(outDir, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

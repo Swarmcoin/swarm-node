@@ -82,12 +82,63 @@ and nothing for this app to hold.
 
 ## Installing it
 
-Two ways, both 64-bit Windows 10 or newer:
+### Windows — 64-bit Windows 10 or newer
 
 | File | What it is |
 | --- | --- |
 | `SWARM-Node-0.2.0-testnet.3-win-x64.exe` | The installer. Adds a Start-menu entry and an uninstall entry. |
 | `SWARM-Node-0.2.0-testnet.3-win-x64.zip` | Portable. Unzip it anywhere and run `SWARM Node.exe`. Installs nothing. |
+
+### Linux — 64-bit, Debian, Ubuntu, Fedora, Arch and anything else
+
+| File | What it is |
+| --- | --- |
+| `SWARM-Node-0.2.0-testnet.3-linux-x86_64.AppImage` | One file, runs anywhere, installs nothing. |
+| `swarm-node_0.2.0-testnet.3_amd64.deb` | For Debian and Ubuntu: `sudo apt install ./swarm-node_*.deb` |
+
+**The AppImage will not run until you make it executable.** That is normal for
+every AppImage, not something wrong with this one:
+
+```
+chmod +x SWARM-Node-0.2.0-testnet.3-linux-x86_64.AppImage
+./SWARM-Node-0.2.0-testnet.3-linux-x86_64.AppImage
+```
+
+If it still does nothing on an older distribution, run it with
+`--no-sandbox`, or install the `.deb` instead.
+
+### macOS — Apple silicon and Intel
+
+| File | What it is |
+| --- | --- |
+| `SWARM-Node-0.2.0-testnet.3-mac-arm64.dmg` | Apple silicon (M1 and later). |
+| `SWARM-Node-0.2.0-testnet.3-mac-x64.dmg` | Intel Macs. |
+| `…-mac-arm64.zip` / `…-mac-x64.zip` | The same app without the disk image. |
+
+Pick the one that matches your Mac:  > About This Mac. An arm64 build will
+not run on an Intel Mac.
+
+**macOS will refuse to open it the first time, and here is why.** This build is
+**not signed and not notarised** — an Apple Developer account is a purchase the
+project has not made yet. So macOS says *"SWARM Node can't be opened because
+Apple cannot check it for malicious software"*.
+
+To open it once, after dragging it to Applications:
+
+1. Find **SWARM Node** in Applications.
+2. **Right-click** it (or hold Control and click) and choose **Open**.
+3. The same warning appears, but now with an **Open** button. Click it.
+
+You only do that once. If the Open button does not appear, remove the
+quarantine flag from a terminal instead:
+
+```
+xattr -dr com.apple.quarantine "/Applications/SWARM Node.app"
+```
+
+Before you trust any of that, check the file you downloaded matches the one
+that was built — see the checksum step below, using `shasum -a 256 <file>` on
+macOS or `sha256sum <file>` on Linux.
 
 ### Windows will warn you, and here is why
 
@@ -195,8 +246,10 @@ blocks and tells you to check your wallet for the balance.
 
 ## Known limits of this version
 
-* Windows 64-bit only. Linux and macOS are not built yet.
-* Unsigned, so SmartScreen warns. See above.
+* 64-bit only, on all three platforms. There is no 32-bit build and no
+  Linux ARM build.
+* Unsigned everywhere. Windows SmartScreen warns; macOS refuses the first
+  launch until you right-click and choose Open. See above.
 * No automatic updates. New versions are downloaded and installed by hand, on
   purpose, for this testnet.
 * Shielded mining uses exactly one core. That is a limitation of the node's

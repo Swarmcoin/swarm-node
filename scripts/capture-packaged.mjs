@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket } from './ws-min.mjs';
 import { startShots } from './cdp-shot.mjs';
 import { stopApp } from './stop-app.mjs';
+import { resolveAppExe } from './app-path.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
@@ -46,8 +47,9 @@ const dataDir = process.env.SWARM_HARNESS_DIR
   || path.join('C:/Users/o5o-o/swarm-work/ws-e/_harness', String(Date.now()));
 const PORT = Number(process.env.SWARM_CDP_PORT) || 9333;
 
-const exe = path.join(unpacked, 'SWARM Node.exe');
-if (!fs.existsSync(exe)) { console.error(`not found: ${exe}`); process.exit(2); }
+// Windows, Linux and macOS each put it somewhere different; see app-path.mjs.
+const exe = resolveAppExe(unpacked);
+if (!exe) process.exit(2);
 fs.mkdirSync(outDir, { recursive: true });
 fs.mkdirSync(dataDir, { recursive: true });
 
