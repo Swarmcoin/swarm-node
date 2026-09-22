@@ -396,6 +396,11 @@ class ChainEngine extends EventEmitter {
     if (/below the highest checkpoint/.test(t)) return null;      // meaningless without checkpoints
     if (/assuming the open file limit is high enough/.test(t)) return null;
     if (/Thank you for running a/.test(t)) return null;
+    // A peer dial prints the ENTIRE network definition - every funding-stream
+    // address, the genesis hash, every activation height - as one Rust struct.
+    // It filled the owner's Log with hundreds of characters of internal
+    // detail per connection attempt. The node's own log files keep it.
+    if (/^\s*dial\{/.test(this.stripTargets(t))) return null;
     // Everything else is shown, but tidied: no timestamps, no levels, no
     // upstream module paths. The raw line stays in the node's own log file.
     const tidy = this.tidyNodeLine(t);
@@ -412,7 +417,8 @@ class ChainEngine extends EventEmitter {
    * sentence. The node's own log files on disk keep every original line, tags
    * and all, so nothing is lost for diagnosis.
    */
-  tidyNodeLine(line) {
+  /** Timestamp, level and the `crate::module::span:` tags, gone. */
+  stripTargets(line) {
     let t = String(line);
     // 2026-09-22T03:33:31.782513Z  INFO  ->  gone
     t = t.replace(/^\s*\d{4}-\d{2}-\d{2}T[\d:.]+Z?\s+/, '');
@@ -426,6 +432,23 @@ class ChainEngine extends EventEmitter {
       t = t.replace(/^[a-z_][a-z0-9_]*\{[^}]*\}:\s*/i, '');                     // span{field=x}:
       if (t === before) break;
     }
+    return t.trim();
+  }
+
+  tidyNodeLine(line) {
+    let t = this.stripTargets(line);
+
+    // The upstream project's name inside the SENTENCE, not just in the target
+    // tag. "activating mempool: Zebra is close to the tip" reached the owner's
+    // Log page after the tags had been stripped, which is the same leak by
+    // another route. This app calls it your node, everywhere a user reads.
+    // The About screen still names Zebra, in full, where the credit belongs.
+    t = t.replace(/\bzebrad\b/gi, 'your node').replace(/\bzebra\b/gi, 'your node');
+
+    // Rust struct dumps run to hundreds of characters and are unreadable in a
+    // log box. Cut them; the node's own files keep every original line.
+    const MAX = 300;
+    if (t.length > MAX) t = `${t.slice(0, MAX).trimEnd()}… (full line in the node's log file)`;
     return t.trim();
   }
 

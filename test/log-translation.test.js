@@ -109,3 +109,36 @@ test('no upstream project name survives into the user-facing log', () => {
     assert.ok(!/\bzebra/i.test(text), `"zebra" leaked into: ${text}`);
   }
 });
+
+test('the upstream project name never reaches the Log, tag or sentence', () => {
+  const e = engine();
+  const cases = [
+    // The one the owner would have read, straight off the packaged build.
+    ['2026-09-22T13:39:17.0Z  INFO zebrad::components::mempool: activating mempool: Zebra is close to the tip tip_height=Height(0)',
+      /your node is close to the tip/],
+    ['2026-09-22T13:39:17.0Z  INFO zebra_state::service: Zebra is unable to verify',
+      /your node is unable to verify/]
+  ];
+  for (const [raw, want] of cases) {
+    const out = e.translateNodeLine(raw);
+    assert.ok(out && out.text, `dropped instead of translated: ${raw}`);
+    assert.match(out.text, want);
+    assert.ok(!/zebra/i.test(out.text), `"zebra" leaked: ${out.text}`);
+  }
+});
+
+test('a peer dial that dumps the whole network definition is not shown', () => {
+  const e = engine();
+  const raw = '2026-09-22T13:39:15.0Z  INFO dial{network=ConfiguredTestnet(Parameters { network_name: "SwarmTestnet", '
+    + 'genesis_hash: block::Hash("045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28") })}: '
+    + 'zebra_network::peer_set::initialize: connecting';
+  assert.equal(e.translateNodeLine(raw), null, 'hundreds of characters of internal struct');
+});
+
+test('any over-long node line is cut rather than filling the box', () => {
+  const e = engine();
+  const raw = `2026-09-22T13:39:15.0Z  INFO some_crate::module: ${'x'.repeat(900)}`;
+  const out = e.translateNodeLine(raw);
+  assert.ok(out.text.length < 400, `still ${out.text.length} characters`);
+  assert.match(out.text, /full line in the node/);
+});

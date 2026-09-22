@@ -516,9 +516,14 @@ export function SettingsView({ s, cfg, api }) {
         <p className="small muted">The only thing this app stores about you. Change it any time; the node restarts to pick it up.</p>
         <input type="text" spellCheck={false} value={addr} onChange={(e) => setAddr(e.target.value)} />
         <div className="row" style={{ marginTop: 12 }}>
+          {/* The answer this screen just got, in preference to the state
+              snapshot, which is up to a second behind. Showing "Not set yet."
+              beside "Saved, but not checked yet" is two contradictory states
+              on one screen, which is the thing this release removed from the
+              wizard; it has no business here either. */}
           <span className="small muted">
-            {s.payout.detail || 'Not set yet.'}
-            {s.payout.address && !s.payout.confirmed
+            {(addrResult && addrResult.ok && addrResult.detail) || s.payout.detail || 'Not set yet.'}
+            {(addrResult ? addrResult.ok && !addrResult.confirmed : s.payout.address && !s.payout.confirmed)
               ? <span className="dim"> · not confirmed by your node yet</span>
               : null}
           </span>

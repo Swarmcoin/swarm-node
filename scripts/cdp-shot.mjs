@@ -79,10 +79,22 @@ export async function startShots(cdp, { width = 1200, height = 820 } = {}) {
       await new Promise((r) => setTimeout(r, 120));
       await metrics(height);
 
-      const until = Date.now() + 5000;
+      // Wait for a new frame, and then for the frames to STOP.
+      //
+      // Taking the first frame after the damage is not enough: the first one
+      // back can be a re-raster of the old content, so a shot came out
+      // identical to the previous screen while the page text had already
+      // moved on. The walk caught it and said so. Settling on quiescence -
+      // no new frame for a moment - gets the last frame of the repaint,
+      // which is the one that shows what is actually there.
+      const until = Date.now() + 6000;
+      let sawNew = false;
+      let lastCount = frames;
+      let quietSince = Date.now();
       while (Date.now() < until) {
-        if (frames > before && latest) return Buffer.from(latest.data, 'base64');
-        await new Promise((r) => setTimeout(r, 100));
+        if (frames !== lastCount) { lastCount = frames; sawNew = true; quietSince = Date.now(); }
+        if (sawNew && Date.now() - quietSince >= 400 && latest) return Buffer.from(latest.data, 'base64');
+        await new Promise((r) => setTimeout(r, 80));
       }
       if (latest) return Buffer.from(latest.data, 'base64');   // stale beats nothing
       throw new Error('no frame could be obtained from the hidden window');
