@@ -288,36 +288,37 @@ jobs:
           # disagree: both come from the file that ships beside the installer.
           $m = Get-Content out/release-manifest.json -Raw | ConvertFrom-Json
           $sums = (Get-Content out/SHA256SUMS -Raw).Trim()
-          $notes = @"
-**NOT AUDITED AND NOT PUBLISHED.** A draft build for review.
-
-| | |
-| --- | --- |
-| Version | ``$($m.version)`` |
-| Commit | ``$($m.git_commit)`` |
-| Built | $($m.built_at_utc) |
-| Workflow run | $($m.workflow_run) |
-| Network | $($m.network.name), genesis ``$($m.network.genesis)`` |
-| Seed | $($m.network.seeds -join ', ') |
-| Signed | no — Windows SmartScreen will warn |
-| Automatic updates | off |
-
-Bundled programs, verified against the hashes their own builds produced:
-
-``````
-zebrad.exe         $($m.bundled_binaries.zebrad.sha256)
-privacy-miner.exe  $($m.bundled_binaries.miner.sha256)
-``````
-
-Downloads:
-
-``````
-$sums
-``````
-
-Everything above is read from ``release-manifest.json``, which ships with the
-files, so this text and the manifest cannot disagree.
-"@
+          $nl = [Environment]::NewLine
+          $notes = @(
+            "**NOT AUDITED AND NOT PUBLISHED.** A draft build for review."
+            ""
+            "| | |"
+            "| --- | --- |"
+            "| Version | ``$($m.version)`` |"
+            "| Commit | ``$($m.git_commit)`` |"
+            "| Built | $($m.built_at_utc) |"
+            "| Workflow run | $($m.workflow_run) |"
+            "| Network | $($m.network.name), genesis ``$($m.network.genesis)`` |"
+            "| Seed | $($m.network.seeds -join ', ') |"
+            "| Signed | no - Windows SmartScreen will warn |"
+            "| Automatic updates | off |"
+            ""
+            "Bundled programs, verified against the hashes their own builds produced:"
+            ""
+            '```'
+            "zebrad.exe         $($m.bundled_binaries.zebrad.sha256)"
+            "privacy-miner.exe  $($m.bundled_binaries.miner.sha256)"
+            '```'
+            ""
+            "Downloads:"
+            ""
+            '```'
+            $sums
+            '```'
+            ""
+            "Everything above is read from release-manifest.json, which ships with the"
+            "files, so this text and the manifest cannot disagree."
+          ) -join $nl
           $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           [IO.File]::WriteAllText($notesFile, $notes, (New-Object Text.UTF8Encoding $false))
 
