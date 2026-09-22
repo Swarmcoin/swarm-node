@@ -62,9 +62,9 @@
     "hex_file_sha256": "1d2ffff8cbcb872167cc5d7d30f82d62aa997e45a0d82dafe9f1da053a6e0d6f",
     "block_sha256": "e5f56bd73160031807e3fc105bb2cf48d4368a5726eee8f1b198540d1a8c22d6",
     "generator": {
-      "tool": "privacy-miner genesis (branch swarm-tools of brs-holding/privacy-zebra)",
+      "tool": "privacy-miner genesis (branch swarm-tools of Swarm-Official/privacy-zebra)",
       "commit": "103184e96",
-      "workflow_run": "https://github.com/brs-holding/privacy-zebra/actions/runs/35626325459",
+      "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35626325459",
       "binary_sha256": "e6e16810e5f01688a668d80d11be689c278d2df3b3c5d35d25667b668c35123a",
       "reproductions": 4,
       "reproduction_note": "Four runs of the checksum-verified CI binary into four fresh folders, all producing byte-identical genesis.hex (sha256 1d2ffff8cbcb872167cc5d7d30f82d62aa997e45a0d82dafe9f1da053a6e0d6f) and identical generator manifests. The installed file was then verified independently in pure Python, with no Rust involved: the 1487-byte header decodes to version 4, an all-zero previous-block hash, the upstream merkle root, time 1789992000, bits 2007ffff, nonce ...0001 and a 1344-byte Equihash solution, and its double-SHA256 in display order is the recorded genesis hash.",
@@ -182,7 +182,7 @@
     "state": "generated 2026-09-21 on the owner's PC",
     "shape": "one secp256k1 key per destination (1-of-1 multisig redeem script), owner decision of 2026-09-21; multisig is deferred to a future mainnet",
     "tool": "swarm-keytool, branch swarm-tools @ 103184e96",
-    "workflow_run": "https://github.com/brs-holding/privacy-zebra/actions/runs/35626325459",
+    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35626325459",
     "key_files": "D:/privacy/.runtime/swarm-testnet/destinations/<label>.keys.json (git-ignored, ACL restricted to the owner and SYSTEM)",
     "requirement": "Every recipient must be a testnet P2SH address. zebra-consensus/src/block/check.rs asserts 'address must be P2SH' and the node panics on a tm.../t1.../t3... address.",
     "custody": "Whoever holds a key file controls that destination's coins. If a key file is lost the coins paid to that destination can never be spent. Spending from P2SH is not supported by the desktop wallet or Zallet today, so until a spending path is demonstrated these balances are reported as received and visible, not as spendable.",
@@ -218,7 +218,7 @@
     "explorer": "https://explore.swarm.green",
     "swarm_map": "https://swarm.green/#map",
     "x": "https://x.com/swarm_coin",
-    "source": "https://github.com/brs-holding"
+    "source": "https://github.com/Swarm-Official"
   },
   "contact_email": "swarmofficial@atomicmail.io",
   "channels_note": "Set by the owner on 2026-09-21. No other account or address speaks for the project. The project never asks for recovery phrases, private keys or payments through any channel."

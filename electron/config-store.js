@@ -35,7 +35,21 @@ function defaults(manifest) {
     maxTipAgeSeconds: Number(gate.max_tip_age_seconds) || 900,
     stopTimeoutMs: 20000,
     reducedMotion: false,
-    setupStep: 'welcome'
+    setupStep: 'welcome',
+
+    // Did this person ever FINISH the first-run wizard on this machine?
+    //
+    // The owner installed 0.2.0-testnet.2 and never saw the wizard. The old
+    // rule inferred "setup is done" from two settings being present at all:
+    // a consent flag and a payout address. Anything that left those behind -
+    // an earlier build, a copied profile, a half-finished run - silently sent
+    // the user straight to a dashboard they had never been introduced to.
+    //
+    // Presence of data is not evidence of a finished introduction. Only
+    // reaching the end of the wizard sets this, and only this suppresses it.
+    setupCompletedVersion: null,   // the app version that finished it
+    setupCompletedAt: null,        // ISO timestamp, for support questions
+    tourSeenVersion: null          // the guided tour, tracked the same way
   };
 }
 

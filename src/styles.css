@@ -272,7 +272,9 @@ input[type='range'] { width: 100%; accent-color: var(--orange); }
 }
 .log .ln { display: flex; gap: 10px; white-space: pre-wrap; word-break: break-word; }
 .log .t { color: var(--ink-faint); flex: 0 0 auto; }
-.log .k { flex: 0 0 34px; color: var(--ink-low); }
+.log .k { flex: 0 0 40px; color: var(--ink-low); text-align: right; opacity: .75; }
+.log .k.app { color: var(--honey); }
+.log .k.miner { color: var(--green); }
 .log .m.app { color: var(--honey); }
 .log .m.miner { color: var(--green); }
 

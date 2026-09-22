@@ -40,19 +40,72 @@ test('noise with no meaning on this network is dropped entirely', () => {
   }
 });
 
-test('everything else passes through untouched', () => {
+test('everything else still reaches the log, tidied rather than dropped', () => {
   const e = engine();
-  for (const raw of [
-    'INFO zebrad::commands::start: spawning Zcash miner',
-    'INFO sync: verified block height=500',
-    'WARN something genuinely odd happened'
+  for (const [raw, want] of [
+    ['INFO zebrad::commands::start: spawning Zcash miner', 'spawning Zcash miner'],
+    // A bare "sync:" is a plain English word, not an upstream module name, so
+    // it stays. The rule is that no upstream project or crate name reaches the
+    // user, not that every colon is stripped.
+    ['INFO sync: verified block height=500', 'sync: verified block height=500'],
+    ['WARN something genuinely odd happened', 'something genuinely odd happened']
   ]) {
-    assert.strictEqual(e.translateNodeLine(raw), undefined, `should pass through: ${raw}`);
+    const out = e.translateNodeLine(raw);
+    const text = out === undefined ? raw : out.text;
+    assert.notStrictEqual(out, null, `must not be dropped: ${raw}`);
+    assert.strictEqual(text, want, raw);
   }
 });
 
 test('a real problem is never hidden', () => {
   const e = engine();
-  const bad = 'ERROR zebra_state: database corruption detected';
-  assert.strictEqual(e.translateNodeLine(bad), undefined);
+  const out = e.translateNodeLine('ERROR zebra_state: database corruption detected');
+  assert.notStrictEqual(out, null, 'an error must never be dropped');
+  const text = out === undefined ? 'unchanged' : out.text;
+  assert.match(text, /database corruption detected/);
+});
+
+test('the log a person reads carries no upstream module paths', () => {
+  const e = engine();
+  const cases = [
+    ['2026-09-22T03:33:31.782513Z  INFO zebrad::commands::start: spawning Zcash miner',
+     'spawning Zcash miner'],
+    ['2026-09-22T03:39:05.302094Z  INFO run_mining_solver{solver_id=0}: zebrad::components::miner: successfully mined a new block',
+     'successfully mined a new block'],
+    ['2026-09-22T03:33:32.252438Z  INFO zebra_state::service: waiting for the block write task to finish',
+     'waiting for the block write task to finish']
+  ];
+  for (const [raw, want] of cases) {
+    assert.strictEqual(e.tidyNodeLine(raw), want, raw);
+    assert.ok(!/zebrad?[:_]/.test(e.tidyNodeLine(raw)), 'no upstream module path may survive');
+  }
+});
+
+test('tidying never throws away the sentence itself', () => {
+  const e = engine();
+  assert.strictEqual(e.tidyNodeLine('plain words with no tags'), 'plain words with no tags');
+  assert.strictEqual(e.tidyNodeLine(''), '');
+});
+
+test('a tidied line is what reaches the log, and it is marked as the node speaking', () => {
+  const e = engine();
+  const out = e.translateNodeLine('2026-09-22T03:33:31.7Z  INFO zebrad::commands::start: spawning Zcash miner');
+  assert.ok(out && out.kind === 'node');
+  assert.strictEqual(out.text, 'spawning Zcash miner');
+});
+
+test('no upstream project name survives into the user-facing log', () => {
+  const e = engine();
+  const samples = [
+    '2026-09-22T03:33:31.7Z  INFO zebrad::commands::start: spawning Zcash miner',
+    '2026-09-22T03:33:32.2Z  INFO zebra_state::service::write: StateService closed the channel',
+    '2026-09-22T03:33:33.1Z  INFO zebra_network::peer_set::initialize: finished connecting',
+    '2026-09-22T03:33:34.0Z  INFO run_mining_solver{solver_id=0}: zebrad::components::miner: mined'
+  ];
+  for (const raw of samples) {
+    const out = e.translateNodeLine(raw);
+    if (out === null) continue;                       // dropped entirely, also fine
+    const text = out === undefined ? raw : out.text;
+    assert.ok(!/\bzebra/i.test(text), `"zebra" leaked into: ${text}`);
+  }
 });

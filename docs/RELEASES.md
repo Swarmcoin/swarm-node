@@ -3,7 +3,7 @@
 ## Why auto-update was removed rather than disabled
 
 The earlier SWARM Node — the owner's AI-compute app, version 0.1.x — ships with
-`electron-updater` pointed at the public `brs-holding/swarm-downloads` GitHub
+`electron-updater` pointed at the public `Swarm-Official/swarm-downloads` GitHub
 release feed, with `autoDownload` and `autoInstallOnAppQuit` both on. Every one
 of those installs checks that feed on launch.
 
@@ -29,12 +29,12 @@ So this build:
 When the project wants automatic updates for SWARM Node, the work is:
 
 1. **Create a separate release repository.** Never `swarm-downloads`. Something
-   like `brs-holding/swarm-node-releases`, used by nothing else.
+   like `Swarm-Official/swarm-node-releases`, used by nothing else.
 2. **Add the publish target** to `package.json` under `build`:
 
    ```json
    "publish": [
-     { "provider": "github", "owner": "brs-holding", "repo": "swarm-node-releases", "releaseType": "release" }
+     { "provider": "github", "owner": "Swarm-Official", "repo": "swarm-node-releases", "releaseType": "release" }
    ]
    ```
 
@@ -71,7 +71,7 @@ gh release create v0.2.0-testnet.1 \
   SWARM-Node-0.2.0-testnet.1-win-x64.exe \
   SWARM-Node-0.2.0-testnet.1-win-x64.zip \
   SHA256SUMS release-manifest.json \
-  -R brs-holding/swarm-node \
+  -R Swarm-Official/swarm-node \
   --title "SWARM Node 0.2.0-testnet.1" \
   --notes-file RELEASE-NOTES.md \
   --prerelease

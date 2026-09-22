@@ -19,6 +19,25 @@ const TABS = [
   ['log', 'Log', 'log']
 ];
 
+/**
+ * Which screen does this install open on?
+ *
+ * The owner installed 0.2.0-testnet.2 and went straight to a dashboard,
+ * never having seen the wizard. The old rule read "consent flag set AND a
+ * payout address present" as "setup is done", so any profile that already
+ * carried those two values — an earlier build, a copied folder, an abandoned
+ * half-run — skipped the introduction silently.
+ *
+ * The rule now: the wizard runs unless THIS user finished it, proved by a
+ * completion marker the main process stamps with the app version. Stray data
+ * no longer counts as consent to skip; it is only used to pre-fill, so
+ * finishing again is quick.
+ */
+export function firstScreen(cfg) {
+  if (cfg && cfg.setupCompletedVersion) return 'dashboard';
+  return 'welcome';
+}
+
 export default function App() {
   const [cfg, setCfg] = useState(null);
   const [state, setState] = useState(null);
@@ -33,6 +52,12 @@ export default function App() {
     stopNode: () => window.engine.stopNode(),
     startMining: () => window.engine.startMining(),
     stopMining: () => window.engine.stopMining(),
+    armMining: (on) => window.engine.armMining(on),
+    // The Mining page's primary button may need to leave the page — "add a
+    // payout address" is not something that screen can do. It is routed here
+    // rather than by the page, so the page never has to know about tabs.
+    goToPayout: () => setTab('settings'),
+    goToTab: (t) => setTab(t),
     setMiningMode: (m) => window.engine.setMiningMode(m),
     setIntensity: (n) => window.engine.setIntensity(n),
     setIdleOnly: (v) => window.engine.setIdleOnly(v),
@@ -76,7 +101,7 @@ export default function App() {
         if (tb) setTab(tb);
         return;
       }
-      setScreen(c.consented ? (c.payoutAddress ? 'dashboard' : 'payout') : 'welcome');
+      setScreen(firstScreen(c));
     })();
 
     const offState = window.engine.onState((s) => setState(s));
@@ -135,7 +160,13 @@ export default function App() {
                 api={api}
                 dataDir={state.node.dataDir}
                 onBack={() => setScreen('payout')}
-                onNext={() => { setScreen('dashboard'); setTab('mining'); }}
+                onNext={async () => {
+                  // The end of the wizard, and the only thing that records it.
+                  await window.shell.completeSetup();
+                  setCfg(await window.shell.getConfig());
+                  setScreen('dashboard');
+                  setTab('mining');
+                }}
               />
             ) : null}
           </div>
@@ -200,7 +231,7 @@ export default function App() {
           {tab === 'mining' ? <MiningView s={state} api={api} /> : null}
           {tab === 'node' ? <NodeView s={state} api={api} cfg={cfg} /> : null}
           {tab === 'rewards' ? <RewardsView s={state} /> : null}
-          {tab === 'map' ? <MapView cfg={cfg} reducedMotion={!!cfg.reducedMotion} /> : null}
+          {tab === 'map' ? <MapView cfg={cfg} s={state} reducedMotion={!!cfg.reducedMotion} /> : null}
           {tab === 'settings' ? <SettingsView s={state} cfg={cfg} api={api} /> : null}
           {tab === 'log' ? <LogView lines={lines} /> : null}
         </div>

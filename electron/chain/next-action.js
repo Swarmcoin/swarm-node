@@ -1,0 +1,114 @@
+// What the big button on the Mining page does, right now.
+//
+// The owner installed 0.2.0-testnet.2 and found "Start mining" greyed out with
+// nothing to click and no explanation on that screen. A disabled button is a
+// dead end: it tells the user they are wrong without telling them what to do.
+//
+// The rule this file enforces: there is ALWAYS one enabled primary action, it
+// always moves the user forward, and it always carries a one-line reason. When
+// mining genuinely cannot start yet - the node is still catching up - the
+// action is to arm it, so the machine starts by itself the moment it is
+// allowed, and the button says so instead of pretending to be broken.
+//
+// Pure: it is given the state snapshot and returns a description. It performs
+// nothing and imports nothing, which is what makes it testable.
+
+'use strict';
+
+/** The action ids the renderer must handle. Anything else is a bug. */
+const ACTIONS = ['stop', 'start', 'arm', 'disarm', 'start-node', 'set-address', 'fix-binary', 'override'];
+
+/**
+ * @param {object} state the engine snapshot (getState)
+ * @returns {{
+ *   id: string, label: string, tone: 'primary'|'danger',
+ *   why: string, progress: {done:number,total:number,label:string}|null,
+ *   alternative: {id:string,label:string,why:string}|null
+ * }}
+ */
+function nextAction(state) {
+  const s = state || {};
+  const m = s.mining || {};
+  const n = s.node || {};
+  const g = s.gate || {};
+  const p = s.payout || {};
+
+  // Already mining: the only sensible primary is to stop.
+  if (m.on) {
+    return act('stop', '■  Stop mining', 'danger',
+      m.mode === 'shielded'
+        ? 'The node is mining to your shielded address.'
+        : `${m.workers || 0} core${m.workers === 1 ? '' : 's'} are working for you.`);
+  }
+
+  // No address: nothing can be paid to anybody. This is the one case where
+  // the primary leaves the page, because the answer is not on it.
+  if (!p.address) {
+    return act('set-address', 'Add your payout address', 'primary',
+      'Mining needs somewhere to pay you. It takes one paste from the SWARM Wallet.');
+  }
+
+  // No node: mining talks to YOUR node, so that is the next thing.
+  if (!n.running) {
+    return act('start-node', 'Start your node', 'primary',
+      'Your own node has to be running first; mining asks it what to work on.');
+  }
+
+  // The engine the user picked is not installed. Offering "start" here would
+  // fail on click, so the primary switches to the thing that can be fixed.
+  if (m.mode === 'standard' && m.standardAvailable === false) {
+    return act('fix-binary', 'Use the node’s own miner instead', 'primary',
+      'The multi-core miner is not available in this build, but the node can mine on one core.');
+  }
+
+  // The gate is open.
+  if (g.allow) {
+    return act('start', '▶  Start mining', 'primary',
+      g.overridden
+        ? 'Starting at your request, while the node catches up.'
+        : 'Your node is connected and up to date.');
+  }
+
+  // The gate is closed. Never a dead end: arm it.
+  const progress = syncProgress(n, g);
+  if (m.armed) {
+    return act('disarm', 'Cancel automatic start', 'primary',
+      'Mining will begin by itself as soon as your node is ready. ' + (g.message || ''),
+      progress,
+      g.offerOverride
+        ? { id: 'override', label: 'Start anyway', why: 'This is taking longer than expected.' }
+        : null);
+  }
+  return act('arm', '▶  Start mining when ready', 'primary',
+    (g.message ? g.message + ' ' : '') + 'This arms it: nothing is wasted while your node catches up.',
+    progress,
+    g.offerOverride
+      ? { id: 'override', label: 'Start anyway', why: 'This is taking longer than expected.' }
+      : null);
+}
+
+/**
+ * Real progress or none. Extrapolating a percentage from a height the app has
+ * not been told is how a progress bar comes to sit at 99% forever.
+ */
+function syncProgress(node, gate) {
+  const mine = Number.isInteger(node.height) ? node.height : null;
+  const net = Number.isInteger(gate.networkHeight) ? gate.networkHeight
+    : Number.isInteger(node.networkHeight) ? node.networkHeight : null;
+  if (mine == null) return null;
+  if (net == null || net <= 0) {
+    return { done: mine, total: null, label: `block ${mine.toLocaleString('en-US')} so far` };
+  }
+  const total = Math.max(net, mine);
+  return {
+    done: mine,
+    total,
+    label: `block ${mine.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`
+  };
+}
+
+function act(id, label, tone, why, progress = null, alternative = null) {
+  return { id, label, tone, why, progress, alternative };
+}
+
+module.exports = { nextAction, ACTIONS, syncProgress };

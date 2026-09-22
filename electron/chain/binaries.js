@@ -18,7 +18,22 @@ const path = require('path');
 const crypto = require('crypto');
 const { unpackedPath } = require('./graceful-stop');
 
+// The names the user sees in Task Manager or `ps`.
+//
+// The owner asked why a console window said "zebra". The programs are Zebra's
+// and the About screen says so plainly, but a process list is not the place a
+// person should meet an upstream project name. They are renamed when the app
+// is packaged; the SOURCES are untouched and the pin record follows the
+// shipped file name, so the hash gate still decides.
+//
+// The upstream names are accepted as a fallback so a developer checkout with
+// raw binaries in resources/bin still runs.
 const BIN_NAMES = {
+  zebrad: process.platform === 'win32' ? 'swarm-node-daemon.exe' : 'swarm-node-daemon',
+  miner: process.platform === 'win32' ? 'swarm-miner.exe' : 'swarm-miner'
+};
+
+const LEGACY_BIN_NAMES = {
   zebrad: process.platform === 'win32' ? 'zebrad.exe' : 'zebrad',
   miner: process.platform === 'win32' ? 'privacy-miner.exe' : 'privacy-miner'
 };
@@ -51,12 +66,22 @@ function candidates(name) {
  * path is the correct one; the unpacked path stays as a fallback for a build
  * that does unpack it.
  */
+/** win32-x64, linux-x64, darwin-arm64 … */
+function platformKey() { return `${process.platform}-${process.arch}`; }
+
 function loadBaseline() {
   const inAsar = path.join(__dirname, '..', 'net', 'binaries.json');
   for (const file of [inAsar, unpackedPath(inAsar)]) {
     try {
       const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (!parsed || typeof parsed !== 'object') continue;
+      // The file is keyed by platform: the same program has a different hash
+      // on Windows, Linux and macOS, so one flat set would make two of the
+      // three builds refuse to run their own binaries.
+      if (parsed.platforms && typeof parsed.platforms === 'object') {
+        return parsed.platforms[platformKey()] || {};
+      }
+      return parsed;   // a flat file from before the app shipped for three platforms
     } catch { /* try the next one */ }
   }
   return {};
@@ -72,8 +97,11 @@ function resolveBinary(kind, { baseline = loadBaseline() } = {}) {
   if (!name) return { ok: false, path: null, sha256: null, expected: null, reason: `unknown binary ${kind}` };
 
   let found = null;
-  for (const c of candidates(name)) {
-    try { if (fs.statSync(c).isFile()) { found = c; break; } } catch { /* next */ }
+  for (const n of [name, LEGACY_BIN_NAMES[kind]]) {
+    for (const c of candidates(n)) {
+      try { if (fs.statSync(c).isFile()) { found = c; break; } } catch { /* next */ }
+    }
+    if (found) break;
   }
   if (!found) {
     return { ok: false, path: null, sha256: null, expected: null, reason: `${name} is not bundled with this build` };
@@ -118,4 +146,4 @@ function requireBinary(kind, { allowUnpinned = false, baseline } = {}) {
   return r;
 }
 
-module.exports = { resolveBinary, requireBinary, sha256File, loadBaseline, BIN_NAMES };
+module.exports = { resolveBinary, requireBinary, sha256File, loadBaseline, platformKey, BIN_NAMES, LEGACY_BIN_NAMES };

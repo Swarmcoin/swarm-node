@@ -15,15 +15,30 @@ export function MiningView({ s, api }) {
   const g = s.gate;
   const atomic = s.rewards.atomicPerCoin;
 
-  async function toggle() {
+  // The one button, and what it does now. The decision is made in the main
+  // process (electron/chain/next-action.js) from the same snapshot this page
+  // renders, so the label, the reason and the behaviour cannot disagree.
+  //
+  // It is never disabled except for the moment a click is in flight. "Start
+  // mining is greyed out and I do not know why" was the owner's complaint; a
+  // button that explains itself and does the next useful thing is the answer.
+  const next = s.next || { id: 'start', label: '▶  Start mining', tone: 'primary', why: '', progress: null, alternative: null };
+
+  async function runNext(id) {
     setBusy(true);
     setErr(null);
-    const r = m.on ? await api.stopMining() : await api.startMining();
+    let r = null;
+    if (id === 'stop') r = await api.stopMining();
+    else if (id === 'start') r = await api.startMining();
+    else if (id === 'arm') r = await api.armMining(true);
+    else if (id === 'disarm') r = await api.armMining(false);
+    else if (id === 'start-node') r = await api.startNode();
+    else if (id === 'set-address') api.goToPayout();
+    else if (id === 'fix-binary') r = await api.setMiningMode('shielded');
+    else if (id === 'override') r = await api.setUserOverride(true);
     if (r && r.ok === false) setErr(r.error);
     setBusy(false);
   }
-
-  const canStart = g.allow && !busy;
 
   return (
     <div className="stack-lg">
@@ -35,17 +50,39 @@ export function MiningView({ s, api }) {
               {m.on ? (m.mode === 'shielded' ? 'Mining · shielded' : `Mining · ${m.workers} core${m.workers === 1 ? '' : 's'}`) : 'Not mining'}
             </div>
             <div className="small muted" style={{ marginTop: 4 }}>
-              {m.on ? `Running for ${fmtDuration(m.uptimeSec)}` : g.allow ? 'Ready when you are.' : 'Waiting for the node.'}
+              {m.on ? `Running for ${fmtDuration(m.uptimeSec)}` : next.why}
             </div>
+            {next.progress ? (
+              <div style={{ marginTop: 10, maxWidth: 320 }}>
+                <div className="bar">
+                  <i style={{
+                    width: next.progress.total
+                      ? `${Math.max(2, Math.min(100, (next.progress.done / next.progress.total) * 100)).toFixed(1)}%`
+                      : '100%'
+                  }} />
+                </div>
+                <div className="tiny dim" style={{ marginTop: 5 }}>{next.progress.label}</div>
+              </div>
+            ) : null}
           </div>
           <div className="spacer" />
-          <button
-            className={`btn big ${m.on ? 'danger' : 'primary'}`}
-            disabled={m.on ? busy : !canStart}
-            onClick={toggle}
-          >
-            {busy ? 'Working…' : m.on ? '■  Stop mining' : '▶  Start mining'}
-          </button>
+          <div style={{ textAlign: 'right' }}>
+            <button
+              className={`btn big ${next.tone === 'danger' ? 'danger' : 'primary'}`}
+              disabled={busy}
+              onClick={() => runNext(next.id)}
+            >
+              {busy ? 'Working…' : next.label}
+            </button>
+            {next.alternative ? (
+              <div style={{ marginTop: 8 }}>
+                <button className="btn sm ghost" disabled={busy} onClick={() => runNext(next.alternative.id)}>
+                  {next.alternative.label}
+                </button>
+                <div className="tiny dim" style={{ marginTop: 4 }}>{next.alternative.why}</div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -67,15 +104,13 @@ export function MiningView({ s, api }) {
             </div>
             {g.rule ? <div className="tiny dim" style={{ marginTop: 6 }}>Rule in force: {g.rule}.</div> : null}
             {g.offerOverride ? (
-              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.1)' }}>
-                <div className="small">
-                  This has gone on long enough that it may be wrong. If those two numbers look right
-                  to you, you can start anyway — your node may not be on the network&apos;s best
-                  chain, and blocks you find could be discarded.
-                </div>
-                <button className="btn sm" style={{ marginTop: 10 }} onClick={() => api.setUserOverride(true)}>
-                  Start anyway
-                </button>
+              // The button itself is beside the primary one above, so it is not
+              // repeated here — only what pressing it costs you.
+              <div className="small" style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.1)' }}>
+                This has gone on long enough that it may be wrong. <b>Start anyway</b> is offered
+                next to the main button: if those two numbers look right to you, take it — but your
+                node may not be on the network&apos;s best chain, and blocks you find could be
+                discarded.
               </div>
             ) : null}
           </div>
@@ -588,6 +623,11 @@ const LINK_LABELS = [
 ];
 
 // ---------------------------------------------------------------- log
+// Who said it, in words the user can act on. The engine tags every entry
+// 'node', 'miner' or 'app'; the log shows that tag instead of the upstream
+// crate path the programs print themselves.
+const SOURCE_LABEL = { node: 'node', miner: 'miner', app: 'app' };
+
 export function LogView({ lines }) {
   const box = useRef(null);
   const [stick, setStick] = useState(true);
@@ -616,6 +656,7 @@ export function LogView({ lines }) {
         {lines.map((l, i) => (
           <div className="ln" key={i}>
             <span className="t">{new Date(l.t).toLocaleTimeString([], { hour12: false })}</span>
+            <span className={`k ${l.kind}`}>{SOURCE_LABEL[l.kind] || 'app'}</span>
             <span className={`m ${l.kind}`}>{l.text}</span>
           </div>
         ))}

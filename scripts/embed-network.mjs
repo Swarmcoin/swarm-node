@@ -76,7 +76,7 @@ const out = {
     explorer: 'https://explore.swarm.green',
     swarm_map: 'https://swarm.green/#map',
     x: 'https://x.com/swarm_coin',
-    source: 'https://github.com/brs-holding'
+    source: 'https://github.com/Swarm-Official'
   },
   contact_email: 'swarmofficial@atomicmail.io',
   channels_note:

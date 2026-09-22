@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('engine', {
   stopNode: () => invoke('engine:stopNode'),
   startMining: () => invoke('engine:startMining'),
   stopMining: () => invoke('engine:stopMining'),
+  armMining: (on) => invoke('engine:armMining', on === true),
   setMiningMode: (mode) => invoke('engine:setMiningMode', mode),
   setIntensity: (n) => invoke('engine:setIntensity', n),
   setIdleOnly: (v) => invoke('engine:setIdleOnly', v),
@@ -40,6 +41,9 @@ contextBridge.exposeInMainWorld('shell', {
   getConfig: () => invoke('shell:getConfig'),
   setConsent: (v) => invoke('shell:setConsent', v),
   setSetupStep: (step) => invoke('shell:setSetupStep', step),
+  completeSetup: () => invoke('shell:completeSetup'),
+  restartSetup: () => invoke('shell:restartSetup'),
+  setTourSeen: (seen) => invoke('shell:setTourSeen', seen === true),
   setReducedMotion: (v) => invoke('shell:setReducedMotion', v),
   copy: (text) => invoke('shell:copy', text),
   readClipboard: () => invoke('shell:readClipboard'),
@@ -47,5 +51,6 @@ contextBridge.exposeInMainWorld('shell', {
   openLink: (url) => invoke('shell:openLink', url),
   openWallet: () => invoke('shell:openWallet'),
   chooseDataFolder: () => invoke('shell:chooseDataFolder'),
-  getMapData: (force) => invoke('shell:getMapData', force === true)
+  getMapData: (force) => invoke('shell:getMapData', force === true),
+  getNetworkStatus: (force) => invoke('shell:getNetworkStatus', force === true)
 });

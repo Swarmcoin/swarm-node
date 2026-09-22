@@ -200,19 +200,31 @@ function stamp(iso) {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-export function MapView({ cfg, reducedMotion }) {
+export function MapView({ cfg, s, reducedMotion }) {
   const plotRef = useRef(null);
   const [state, setState] = useState(null);
+  const [net, setNet] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load(force) {
     setBusy(true);
-    const r = await window.shell.getMapData(force === true);
+    const [r, n] = await Promise.all([
+      window.shell.getMapData(force === true),
+      window.shell.getNetworkStatus(force === true)
+    ]);
     setState(r);
+    setNet(n);
     setBusy(false);
   }
 
   useEffect(() => { load(false); }, []);
+  // The seed's figure moves; re-read it while the page is open.
+  useEffect(() => {
+    const t = setInterval(() => {
+      window.shell.getNetworkStatus(false).then(setNet).catch(() => {});
+    }, 60000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     if (!state || !state.data || !plotRef.current) return;
@@ -224,8 +236,22 @@ export function MapView({ cfg, reducedMotion }) {
   }, [state, reducedMotion]);
 
   const nodes = state && state.data ? state.data.nodes : [];
-  const total = nodes.reduce((s, n) => s + n.count, 0);
+  const total = nodes.reduce((acc, n) => acc + n.count, 0);
   const when = stamp(state && state.data ? state.data.updated : null);
+
+  // "How many bees" - a real figure or none at all.
+  //
+  // The seed server publishes how many peers IT is connected to. That is a
+  // lower bound on the network and the label says so. When the seed cannot be
+  // reached, the app falls back to this machine's own peer count and labels
+  // THAT exactly, rather than showing one number under the other's name.
+  const localPeers = s && s.chain && Number.isFinite(s.chain.peers) ? s.chain.peers : null;
+  const seedPeers = net && net.ok && net.data && net.data.seedPeers != null ? net.data.seedPeers : null;
+  const reach = seedPeers != null && !(net && net.stale)
+    ? { value: seedPeers, label: 'Seed node peers', detail: 'connections the project’s seed node reports right now' }
+    : localPeers != null
+      ? { value: localPeers, label: 'Your node’s peers', detail: 'nodes YOUR node is connected to (the seed could not be reached)' }
+      : { value: null, label: 'Nodes reachable', detail: 'not known: the seed did not answer and your node is not running' };
 
   return (
     <div className="stack-lg">
@@ -246,21 +272,40 @@ export function MapView({ cfg, reducedMotion }) {
           <div>
             <div className="kicker">Nodes on the map</div>
             <div className="v">{state && state.data ? nf.format(total) : '—'}</div>
+            <div className="tiny dim">only those who asked to be listed</div>
           </div>
           <div>
             <div className="kicker">Cities</div>
             <div className="v">{state && state.data ? nf.format(nodes.length) : '—'}</div>
+            <div className="tiny dim">city level, never finer</div>
           </div>
           <div>
-            <div className="kicker">Location detail</div>
-            <div className="v plain">City level</div>
+            <div className="kicker">{reach.label}</div>
+            <div className="v">{reach.value == null ? '—' : nf.format(reach.value)}</div>
+            <div className="tiny dim">{reach.detail}</div>
           </div>
           <div>
-            <div className="kicker">Listing</div>
-            <div className="v plain">Opt-in</div>
+            <div className="kicker">Your node</div>
+            <div className="v plain">{localPeers == null ? 'Not running' : 'Connected'}</div>
+            <div className="tiny dim">{localPeers == null ? 'start it on the Node page' : 'not on the map — listing is opt-in'}</div>
           </div>
         </div>
       </div>
+
+      {/* The exact question the owner asked: "I connected my node but it's
+          not showing." Answered on the page, next to the count. */}
+      {localPeers != null ? (
+        <Notice kind="plain">
+          <div>
+            <b>Your node is running and is not on this map. That is by design.</b>
+            <div style={{ marginTop: 4 }}>
+              The map is an opt-in list of cities, not a count of the network. SWARM Node never
+              sends your location or your address anywhere, so nothing about your machine can
+              appear here unless you ask the project to add it.
+            </div>
+          </div>
+        </Notice>
+      ) : null}
 
       {state && state.offline ? (
         <Notice kind="warn">
@@ -291,6 +336,18 @@ export function MapView({ cfg, reducedMotion }) {
           {state && state.data && state.data.note
             ? state.data.note
             : 'Only nodes whose operators chose to share a location appear here, and never finer than a city. It is not a count of the network.'}
+        </p>
+        <p className="small muted" style={{ marginBottom: 8 }}>
+          <b>“{reach.label}” is {reach.value == null ? 'not known' : nf.format(reach.value)}</b> —{' '}
+          {reach.detail}.{' '}
+          {seedPeers != null
+            ? <>Read from <span className="mono">lwd.swarm.green/status.json</span>, which the seed
+              regenerates every 30 seconds{net && net.stale ? ' (this copy is older than that)' : ''}.
+              It is a lower bound: it counts connections to one server, not everyone running SWARM.</>
+            : net && net.error
+              ? <>The seed did not answer ({net.error}), so nothing from it is shown.</>
+              : null}
+          {' '}There is no census service, so no total for the whole network exists to show.
         </p>
         <p className="small muted" style={{ marginBottom: 0 }}>
           Want your city on the map? Listing is opt-in and is being built — for now, tell the

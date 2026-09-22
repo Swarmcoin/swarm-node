@@ -24,6 +24,7 @@ const fs = require('fs');
 const { ChainEngine } = require('./chain/engine');
 const { SettingsStore } = require('./config-store');
 const { MapData } = require('./chain/map-data');
+const { NetworkStatus } = require('./chain/network-status');
 const { inspect: inspectAddress } = require('./chain/address-format');
 const V = require('./ipc-validate');
 
@@ -70,6 +71,7 @@ let manifest = null;
 let settings = null;
 let engine = null;
 let mapData = null;
+let netStatus = null;
 let win = null;
 let quitting = false;
 
@@ -227,6 +229,7 @@ function registerIpc() {
   handle('engine:stopNode', () => engine.stopNode());
   handle('engine:startMining', () => engine.startMining());
   handle('engine:stopMining', () => engine.stopMining());
+  handle('engine:armMining', (on) => engine.armMining(V.bool(on, 'start when ready')));
   handle('engine:setMiningMode', (mode) => engine.setMiningMode(V.miningMode(mode)));
   handle('engine:setIntensity', (n) => engine.setIntensity(V.int(n, { min: 1, max: 256, name: 'intensity' })));
   handle('engine:setIdleOnly', (v) => engine.setIdleOnly(V.bool(v, 'idle-only')));
@@ -255,6 +258,11 @@ function registerIpc() {
     channelsNote: manifest.channels_note || null,
     status: manifest.status,
     updatesEnabled: false,
+    // Did THIS user finish the wizard? Presence of a consent flag or an
+    // address is not evidence of that; only the marker is. See
+    // config-store.js and firstScreen() in the renderer.
+    setupCompleted: !!settings.data.setupCompletedVersion,
+    tourSeen: settings.data.tourSeenVersion === app.getVersion(),
     testRun: isTestRun
   }));
   handle('shell:setConsent', (v) => {
@@ -264,6 +272,15 @@ function registerIpc() {
   });
   handle('shell:setSetupStep', (step) =>
     settings.save({ setupStep: V.oneOf(V.text(step, { max: 24, name: 'step' }), ['welcome', 'consent', 'payout', 'check', 'dashboard'], 'step') }));
+  // The wizard is finished only when the user reaches the end of it. The
+  // RENDERER cannot pass a version in: it is stamped here from the running
+  // build, so the marker cannot be forged or back-dated by the page.
+  handle('shell:completeSetup', () =>
+    settings.save({ setupCompletedVersion: app.getVersion(), setupCompletedAt: new Date().toISOString() }));
+  handle('shell:restartSetup', () =>
+    settings.save({ setupCompletedVersion: null, setupCompletedAt: null, setupStep: 'welcome' }));
+  handle('shell:setTourSeen', (seen) =>
+    settings.save({ tourSeenVersion: V.bool(seen, 'seen') ? app.getVersion() : null }));
   handle('shell:setReducedMotion', (v) => settings.save({ reducedMotion: V.bool(v, 'reduced motion') }));
   handle('shell:copy', (t) => { clipboard.writeText(V.text(t, { max: 2000, name: 'text' })); return { ok: true }; });
   handle('shell:readClipboard', () => ({ ok: true, text: clipboard.readText().slice(0, 512) }));
@@ -271,6 +288,7 @@ function registerIpc() {
   handle('shell:openLink', (url) => shell.openExternal(V.externalUrl(url, allowedHosts)));
   handle('shell:openWallet', () => openWallet());
   handle('shell:getMapData', (force) => mapData.get({ force: V.bool(force === undefined ? false : force, 'refresh') }));
+  handle('shell:getNetworkStatus', (force) => netStatus.get({ force: V.bool(force === undefined ? false : force, 'refresh') }));
   handle('shell:chooseDataFolder', async () => {
     const r = await dialog.showOpenDialog(win, {
       title: 'Where should the chain be stored?',
@@ -337,6 +355,13 @@ app.whenReady().then(() => {
   // The swarm map's data is fetched HERE, not by the renderer, which keeps
   // connect-src 'none' in the page. One URL, validated, cached on disk.
   mapData = new MapData(path.join(app.getPath('userData'), 'swarm-map.cache.json'));
+  // The one network-wide figure that can be checked: what the seed publishes
+  // about itself. Refused outright if it is not this network. Never cached to
+  // disk, because a stale "right now" number is a false one.
+  netStatus = new NetworkStatus({
+    genesisHash: (manifest.genesis || {}).hash || null,
+    chainLabel: (manifest.identity || {}).light_wallet_chain_label || null
+  });
 
   engine = new ChainEngine({
     manifest,

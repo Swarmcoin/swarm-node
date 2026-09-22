@@ -162,7 +162,7 @@ These are the only places the project speaks from.
 | Website | https://swarm.green |
 | X | https://x.com/swarm_coin |
 | Email | swarmofficial@atomicmail.io |
-| Source | https://github.com/brs-holding |
+| Source | https://github.com/Swarm-Official |
 
 There is no Discord and no Telegram. Anything else claiming to be SWARM is not.
 

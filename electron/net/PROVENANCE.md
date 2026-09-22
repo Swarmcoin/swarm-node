@@ -1,7 +1,7 @@
 # Where the two bundled programs come from
 
 SWARM Node runs two third-party executables. Neither is built here: both are
-built in `brs-holding/privacy-zebra` by GitHub Actions, downloaded by this
+built in `Swarm-Official/privacy-zebra` by GitHub Actions, downloaded by this
 app's build workflow, and refused at run time unless their SHA-256 matches
 `binaries.json`.
 
@@ -16,13 +16,13 @@ with no source changes", which is true of one and not the other.
 | | |
 | --- | --- |
 | SHA-256 | `b6ea39096b99debd64b248789d47c8a3a94afea5541e3a75f896b552ac61c477` |
-| Repository | `brs-holding/privacy-zebra` |
+| Repository | `Swarm-Official/privacy-zebra` |
 | Branch | `swarm-ci` |
 | Commit | `cb99dd063feaac493f93fdfca3e7d7acad685573` |
 | Upstream base | tag **`v6.3.0`** — the official Zcash Foundation release |
 | Build | `cargo build --locked --release --package zebrad --bin zebrad --features internal-miner` |
 | Toolchain | rustc 1.91.0 (f8297e351, 2025-10-28), x86_64-pc-windows-msvc |
-| Workflow run | https://github.com/brs-holding/privacy-zebra/actions/runs/35603263833 |
+| Workflow run | https://github.com/Swarm-Official/privacy-zebra/actions/runs/35603263833 |
 | Built | 2026-09-21T13:26:17Z |
 
 **What the branch changes relative to `v6.3.0`: one file.**
@@ -42,13 +42,13 @@ Cargo feature, switched on at build time, not a patch.
 | | |
 | --- | --- |
 | SHA-256 | `e6e16810e5f01688a668d80d11be689c278d2df3b3c5d35d25667b668c35123a` |
-| Repository | `brs-holding/privacy-zebra` |
+| Repository | `Swarm-Official/privacy-zebra` |
 | Branch | `swarm-tools` |
 | Commit | `103184e96b7f5fc5ae3fdeaec6a97a10612d2f0b` |
 | Upstream base | **`7c64a8419388dd72664a19a70aed66e84f3e2d5b`** — a later upstream Zebra development commit, **333 commits ahead of `v6.3.0`** |
 | Build | `cargo build --locked --release --package zebrad --bin privacy-miner --bin swarm-keytool --features internal-miner` |
 | Toolchain | rustc 1.91.0 (f8297e351, 2025-10-28), x86_64-pc-windows-msvc |
-| Workflow run | https://github.com/brs-holding/privacy-zebra/actions/runs/35626325459 |
+| Workflow run | https://github.com/Swarm-Official/privacy-zebra/actions/runs/35626325459 |
 | Built | 2026-09-21T16:40:14Z |
 
 **What the branch changes relative to that base: four commits, seven files.**
@@ -94,4 +94,4 @@ Aligning the two trees is worth doing before anything resembling a mainnet.
 ---
 
 Checked against the published build manifests and against
-`gh api repos/brs-holding/privacy-zebra/compare/...` on 2026-09-22.
+`gh api repos/Swarm-Official/privacy-zebra/compare/...` on 2026-09-22.

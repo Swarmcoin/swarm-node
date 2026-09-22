@@ -27,6 +27,7 @@ const { validateWithNode } = require('./address');
 const { machineCheck, canBindPort, freeEphemeralPort } = require('./hardware');
 const { requireBinary, loadBaseline } = require('./binaries');
 const { TipOracle } = require('./tip-oracle');
+const { nextAction } = require('./next-action');
 
 const TICK_MS = 1000;
 const SCAN_BUDGET_PER_TICK = 25;   // blocks re-checked per tick by the backstop scan
@@ -106,7 +107,7 @@ class ChainEngine extends EventEmitter {
     };
     this._lastSeenHeight = null;
 
-    this.mining = { on: false, mode: this.settings.miningMode === 'shielded' ? 'shielded' : 'standard', startedAt: null, pausedByGate: false, pausedByIdle: false };
+    this.mining = { on: false, mode: this.settings.miningMode === 'shielded' ? 'shielded' : 'standard', startedAt: null, pausedByGate: false, pausedByIdle: false, armed: false };
     // Drives internal_miner in the generated config. Kept separate from
     // mining.on so that stopping the node (which must also stop mining) can
     // never trigger a restart loop.
@@ -392,7 +393,37 @@ class ChainEngine extends EventEmitter {
     if (/below the highest checkpoint/.test(t)) return null;      // meaningless without checkpoints
     if (/assuming the open file limit is high enough/.test(t)) return null;
     if (/Thank you for running a/.test(t)) return null;
-    return undefined;   // pass through unchanged
+    // Everything else is shown, but tidied: no timestamps, no levels, no
+    // upstream module paths. The raw line stays in the node's own log file.
+    const tidy = this.tidyNodeLine(t);
+    return tidy && tidy !== t ? { kind: 'node', text: tidy } : undefined;
+  }
+
+  /**
+   * Make a node log line readable without lying about it.
+   *
+   * The owner asked why a window said "zebra". The node IS Zebra and the About
+   * screen says so, but a log a person reads should talk about their node, not
+   * about somebody's Rust module paths. This strips the timestamp, the level
+   * and the `zebrad::components::sync:` style target tags, leaving the
+   * sentence. The node's own log files on disk keep every original line, tags
+   * and all, so nothing is lost for diagnosis.
+   */
+  tidyNodeLine(line) {
+    let t = String(line);
+    // 2026-09-22T03:33:31.782513Z  INFO  ->  gone
+    t = t.replace(/^\s*\d{4}-\d{2}-\d{2}T[\d:.]+Z?\s+/, '');
+    t = t.replace(/^(TRACE|DEBUG|INFO|WARN|ERROR)\s+/i, '');
+    // Strip the prefixes, longest form first. A `crate::module::path:` has to
+    // be matched BEFORE the bare `word:` pattern, or "zebrad::commands::start:"
+    // loses only "zebrad" and leaves ":commands::start:" behind.
+    for (let i = 0; i < 6; i += 1) {
+      const before = t;
+      t = t.replace(/^[a-z_][a-z0-9_]*(::[a-z0-9_]+)+(\{[^}]*\})?:\s*/i, '');   // crate::module:
+      t = t.replace(/^[a-z_][a-z0-9_]*\{[^}]*\}:\s*/i, '');                     // span{field=x}:
+      if (t === before) break;
+    }
+    return t.trim();
   }
 
   onNodeLine(line) {
@@ -408,6 +439,7 @@ class ChainEngine extends EventEmitter {
 
   // ---------------------------------------------------------------- mining
   async startMining() {
+    this.mining.armed = false;   // an explicit start supersedes an armed one
     if (!this.node || !this.node.running) return { ok: false, error: 'Start the full node first.' };
     if (!this.address.value) return { ok: false, error: 'Paste a payout address first.' };
 
@@ -465,7 +497,30 @@ class ChainEngine extends EventEmitter {
     return Math.max(1, Math.min(max, Number.isFinite(want) ? Math.round(want) : Math.max(1, Math.floor(max / 2))));
   }
 
-  async stopMining() { return this.stopMiningInternal('stopped by you'); }
+  /**
+   * Arm mining so it starts by itself the moment the gate opens.
+   *
+   * This is what the Mining page's primary button does while the node is
+   * catching up, instead of sitting there greyed out. Nothing is started now
+   * and nothing is promised that the gate will not still have to allow.
+   */
+  armMining(on) {
+    const want = on === true;
+    if (this.mining.armed === want) return { ok: true, armed: want };
+    this.mining.armed = want;
+    this.log(want
+      ? 'mining armed: it will start by itself as soon as your node is ready'
+      : 'automatic start cancelled');
+    this.emit('state', this.getState());
+    return { ok: true, armed: want };
+  }
+
+  async stopMining() {
+    // Stopping by hand also cancels an armed start; otherwise the app would
+    // start mining again behind the user a minute later.
+    this.mining.armed = false;
+    return this.stopMiningInternal('stopped by you');
+  }
 
   /**
    * Stop mining and, for the shielded engine, restart the node so Zebra's
@@ -771,6 +826,13 @@ class ChainEngine extends EventEmitter {
       this.mining.pausedByGate = false;
       this.log('mining resumed: the node has peers again and its tip is current');
       await this.startMining();
+    } else if (!this.mining.on && this.mining.armed && decision.allow) {
+      // The user pressed "Start mining when ready" while the node was still
+      // catching up. This is that promise being kept.
+      this.mining.armed = false;
+      this.log('starting mining: your node is ready, as you asked');
+      const r = await this.startMining();
+      if (r && r.ok === false) this.log(`could not start mining: ${r.error}`);
     }
 
     // Idle-only: pause while the machine is in use.
@@ -797,7 +859,7 @@ class ChainEngine extends EventEmitter {
     const totals = this.ledger.totals(Number.isInteger(this.chain.height) ? this.chain.height : 0);
     const poolSolps = this.pool ? this.pool.solps() : null;
 
-    return {
+    const snapshot = {
       network: {
         name: this.manifest.identity.network_name,
         chain: this.manifest.identity.chain,
@@ -837,6 +899,7 @@ class ChainEngine extends EventEmitter {
         pids: this.pool ? this.pool.workers.map((w) => w.pid).filter(Boolean) : [],
         intensity: this.effectiveWorkerCount(),
         maxWorkers: Math.max(1, (require('os').cpus().length || 2) - 1),
+        armed: this.mining.armed === true,
         pausedByGate: this.mining.pausedByGate,
         pausedByIdle: this.mining.pausedByIdle,
         idleOnly: this.settings.idleOnly === true,
@@ -875,6 +938,12 @@ class ChainEngine extends EventEmitter {
       binaries: this.binaryStatus(),
       lastError: this.lastError
     };
+
+    // What the Mining page's one big button does right now. Decided here, from
+    // the same snapshot the UI receives, so the button and the explanation next
+    // to it can never disagree. See next-action.js.
+    snapshot.next = nextAction(snapshot);
+    return snapshot;
   }
 
   // ---------------------------------------------------------------- settings

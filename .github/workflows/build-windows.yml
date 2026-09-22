@@ -9,7 +9,7 @@ name: Build Windows installer
 # It does NOT publish a GitHub Release. Publishing is one command once the
 # planner has audited the artifacts:
 #   gh release create v<version> SWARM-Node-*.exe SWARM-Node-*.zip SHA256SUMS \
-#     release-manifest.json -R brs-holding/swarm-node --notes-file RELEASE-NOTES.md
+#     release-manifest.json -R Swarm-Official/swarm-node --notes-file RELEASE-NOTES.md
 
 on:
   workflow_dispatch:
@@ -55,7 +55,7 @@ jobs:
 
       # ---- the two binaries this app runs -------------------------------
       #
-      # Both are built in brs-holding/privacy-zebra from official Zebra 6.3.0
+      # Both are built in Swarm-Official/privacy-zebra from official Zebra 6.3.0
       # source with no source changes. They are fetched rather than rebuilt, so
       # the thing that ships is the thing that was tested.
       #
