@@ -54,9 +54,11 @@ port already was. Before, the second copy stopped with an error nobody could
 act on.
 
 **The Log reads in plain words.** Each line is tagged `node`, `miner` or `app`,
-and the internal module names the programs print for their own developers are
-stripped from the display. The node's own log files on disk keep every original
-line, for diagnosis.
+and the internal names the programs print for their own developers are stripped
+from what you read — including the ones that appeared mid-sentence, and the
+connection messages that used to print the whole network definition as one
+unreadable line. The node's own log files on disk keep every original line, for
+diagnosis.
 
 ---
 
