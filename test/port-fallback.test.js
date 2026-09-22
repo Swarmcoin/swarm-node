@@ -46,3 +46,50 @@ test('canBindPort tells a free port from a busy one', async () => {
   assert.ok(Number.isInteger(free) && free > 0, 'the operating system should offer a free port');
   assert.strictEqual((await canBindPort(free)).ok, true);
 });
+
+// The RPC port had no fallback, and that killed a node.
+//
+// The P2P port got one in testnet.2. The node's private control port did not,
+// so a second copy of the app on one machine died on start with a Rust panic
+// the user could do nothing with:
+//   server should start: Os { code: 10048, kind: AddrInUse }
+// Nothing connects IN to that port - 127.0.0.1, cookie-protected, and only
+// this app talks to it - so moving it costs nothing.
+test('the node moves its control port rather than dying on it', async () => {
+  const { ChainEngine } = require('../electron/chain/engine');
+  const srv = net.createServer();
+  const taken = await new Promise((resolve) => { srv.listen(0, '127.0.0.1', () => resolve(srv.address().port)); });
+  try {
+    const e = new ChainEngine({
+      manifest: require('../electron/net/network.json'),
+      dataDir: process.cwd(),
+      settings: { rpcPort: taken, payoutAddress: '' },
+      saveSettings: () => {}
+    });
+    assert.equal(e.rpcPort, taken, 'it starts on the port it was asked for');
+    const r = await e.chooseRpcPort();
+    assert.equal(r.moved, true, 'a taken control port must not be fatal');
+    assert.notEqual(r.port, taken);
+    assert.equal(e.rpcPort, r.port);
+    assert.equal(e.rpc.port, r.port, 'the client has to follow the server');
+    assert.ok(e.rpcMoved && e.rpcMoved.wanted === taken, 'and the move is reported to the user');
+    assert.equal(e.getState().node.rpcMoved.chosen, r.port);
+  } finally {
+    await new Promise((r) => srv.close(r));
+  }
+});
+
+test('a free control port is left exactly where it was', async () => {
+  const { ChainEngine } = require('../electron/chain/engine');
+  const free = await freeEphemeralPort();
+  const e = new ChainEngine({
+    manifest: require('../electron/net/network.json'),
+    dataDir: process.cwd(),
+    settings: { rpcPort: free, payoutAddress: '' },
+    saveSettings: () => {}
+  });
+  const r = await e.chooseRpcPort();
+  assert.equal(r.moved, false);
+  assert.equal(r.port, free);
+  assert.equal(e.rpcMoved, null);
+});

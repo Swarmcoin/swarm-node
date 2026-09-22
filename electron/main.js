@@ -48,6 +48,12 @@ app.setAppUserModelId(APP_ID);
 // installed copy cannot be pointed somewhere unexpected by a stray variable.
 const dataDirOverride = process.env.SWARM_NODE_DATA_DIR;
 const isTestRun = process.env.SWARM_NODE_TEST_RUN === '1';
+// A harness window must not be VISIBLE on anybody's desktop. The owner found
+// one, took it for the app and used it - twice. A red banner was not enough,
+// so a harness run now renders into a window that is never shown at all.
+// Only honoured alongside SWARM_NODE_TEST_RUN, so the product can never start
+// invisibly.
+const isHeadless = isTestRun && process.env.SWARM_NODE_HEADLESS === '1';
 if (dataDirOverride && (!app.isPackaged || isTestRun)) {
   app.setPath('userData', path.resolve(dataDirOverride));
   console.log(`[data] using the override folder ${app.getPath('userData')}`);
@@ -114,14 +120,19 @@ function createWindow() {
       ? 'TEST RUN — do not use — SWARM Node harness'
       : 'SWARM Node',
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
-    // A harness window carries a red TEST RUN banner on every screen (see
-    // .testrun-strip) and is closed the moment a capture ends. Parking it
-    // off-screen was tried and does not work: an Electron window with no
-    // compositor surface cannot produce a frame at all, with or without
-    // fromSurface, so Page.captureScreenshot simply times out. A window that
-    // announces itself is the honest alternative to one that cannot be
-    // photographed.
-    ...(isTestRun ? { skipTaskbar: false } : {}),
+    // Headless harness: never mapped, never in the taskbar, never focusable.
+    // This is NOT the same as parking a window off-screen, which was tried and
+    // does not work - a mapped window with no visible surface produces no
+    // frame at all. A window created hidden with paintWhenInitiallyHidden
+    // keeps its renderer compositing, so Page.captureScreenshot with
+    // fromSurface:false still gets frames out of it.
+    //
+    // A harness window that IS shown (CI on a runner, or a developer watching)
+    // carries a red TEST RUN banner on every screen; see .testrun-strip.
+    show: !isHeadless,
+    paintWhenInitiallyHidden: true,
+    skipTaskbar: isHeadless,
+    focusable: !isHeadless,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -130,9 +141,20 @@ function createWindow() {
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
-      spellcheck: false
+      spellcheck: false,
+      // A hidden window is a background window as far as Chromium is
+      // concerned, and a throttled renderer stops painting and stops running
+      // timers - which is exactly what a capture needs it to keep doing.
+      backgroundThrottling: false
     }
   });
+
+  // Say, from the main process, whether this window is on screen at all.
+  // The renderer cannot be asked: a CDP screencast - which is how a harness
+  // photographs a hidden window - makes document.visibilityState report
+  // "visible" even when nothing was ever shown. This is the authoritative
+  // answer, and the harness checks for it.
+  console.log(`[window] headless=${isHeadless} isVisible=${win.isVisible()}`);
 
   // No remote content, ever. Links open in the user's browser only through
   // the validated shell:openLink handler.

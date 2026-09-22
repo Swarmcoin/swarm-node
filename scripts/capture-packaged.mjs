@@ -17,10 +17,15 @@
 //   * NEVER THE PRODUCT'S DATA FOLDER. A throwaway directory through
 //     SWARM_NODE_DATA_DIR, deleted afterwards. The product's folder is never
 //     read, written or removed.
-//   * THE WINDOW SAYS IT IS A TEST. SWARM_NODE_TEST_RUN=1 puts a red
-//     "TEST RUN — DO NOT USE" banner above every screen. Parking it off-screen
-//     was tried and makes capture impossible: a window with no compositor
-//     surface produces no frame at all.
+//   * NO WINDOW ON ANYBODY'S DESKTOP. The owner found a harness window twice,
+//     took it for the app, and used it - once to try to mine, once to paste a
+//     real payout address. A red "TEST RUN" banner was not enough, because a
+//     banner only works on somebody who reads it. The harness now runs the app
+//     with SWARM_NODE_HEADLESS=1, which creates the window with show:false and
+//     never shows it, and captures with fromSurface:false so the renderer's
+//     own frames are photographed rather than an OS window surface. (Parking a
+//     SHOWN window off-screen was tried before and does not work at all: a
+//     mapped window with no visible surface produces no frame.)
 //   * LEAVE NOTHING RUNNING.
 
 import fs from 'node:fs';
@@ -31,6 +36,7 @@ import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from './ws-min.mjs';
+import { startShots } from './cdp-shot.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
@@ -52,7 +58,7 @@ console.log(`data dir : ${dataDir}   (throwaway, deleted afterwards)`);
 console.log(`out      : ${outDir}\n`);
 
 const child = spawn(exe, [`--remote-debugging-port=${PORT}`], {
-  env: { ...process.env, SWARM_NODE_DATA_DIR: dataDir, SWARM_NODE_TEST_RUN: '1' },
+  env: { ...process.env, SWARM_NODE_DATA_DIR: dataDir, SWARM_NODE_TEST_RUN: '1', SWARM_NODE_HEADLESS: '1' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 child.stdout.on('data', (d) => process.stdout.write(`  app: ${d}`));
@@ -123,6 +129,8 @@ try {
   await cdp.open(15000);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  // The window is never shown; frames have to be asked for. See cdp-shot.mjs.
+  const shots = await startShots(cdp);
 
   const evaluate = async (expression) => {
     const r = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
@@ -132,10 +140,10 @@ try {
 
   const seen = new Map();
   const shotRaw = async (name) => {
-    try { await cdp.send('Page.bringToFront'); } catch { /* not fatal */ }
+    // No bringToFront: there is no window to bring anywhere, and pulling one
+    // in front of the user is the thing this harness must never do.
     await sleep(400);
-    const r = await cdp.send('Page.captureScreenshot', { format: 'png' });
-    const buf = Buffer.from(r.data, 'base64');
+    const buf = await shots.take();
     const md5 = crypto.createHash('md5').update(buf).digest('hex');
     fs.writeFileSync(path.join(outDir, `${name}.png`), buf);
     if (seen.has(md5)) {

@@ -86,6 +86,8 @@ class ChainEngine extends EventEmitter {
     this.p2pPort = Number(this.settings.p2pPort) || Number(ports.p2p != null ? ports.p2p : ports.public_p2p);
     // Set when the network's port was taken and the node moved to another.
     this.p2pMoved = null;
+    // The same for the node's private control port. See chooseRpcPort().
+    this.rpcMoved = null;
 
     this.rpc = new ZebraRpc({ host: '127.0.0.1', port: this.rpcPort, cookieDir: this.dataDir, timeoutMs: 12000 });
 
@@ -115,7 +117,7 @@ class ChainEngine extends EventEmitter {
     this._sizeTick = 0;
     // null until the node has told us which block 0 it holds.
     this.genesisState = null;
-    this.address = { value: this.settings.payoutAddress || '', kind: this.settings.payoutKind || null, detail: this.settings.payoutDetail || '' };
+    this.address = { value: this.settings.payoutAddress || '', kind: this.settings.payoutKind || null, detail: this.settings.payoutDetail || '', confirmed: false };
     this.scanFromHeight = null;
     this.scanCursor = null;
     this.benchmark = null;   // { solps, at, seconds } once the user runs one
@@ -203,6 +205,7 @@ class ChainEngine extends EventEmitter {
     this.log(`zebrad verified, SHA-256 ${bin.sha256}`);
 
     await this.chooseP2pPort();
+    await this.chooseRpcPort();
 
     fs.mkdirSync(this.dataDir, { recursive: true });
     this.node = new ZebraNode({ binaryPath: bin.path, dataDir: this.dataDir, manifest: this.manifest });
@@ -850,6 +853,11 @@ class ChainEngine extends EventEmitter {
 
     if (this.mining.on && this.mining.mode === 'standard') await this.scanForRewards();
 
+    // An address saved while the node was down is usable but unconfirmed.
+    // Once the node is answering, ask it - quietly, once, and never in a way
+    // that can take a working address away from the user.
+    await this.confirmAddressIfPending();
+
     this.emit('state', this.getState(decision));
   }
 
@@ -886,6 +894,7 @@ class ChainEngine extends EventEmitter {
         dataDir: this.dataDir,
         p2pPort: this.p2pPort,
         p2pMoved: this.p2pMoved,
+        rpcMoved: this.rpcMoved,
         rpcPort: this.rpcPort,
         lastStop: this.node ? this.node.lastStopReport : null,
         genesis: this.genesisState
@@ -933,7 +942,8 @@ class ChainEngine extends EventEmitter {
       payout: {
         address: this.address.value,
         kind: this.address.kind,
-        detail: this.address.detail
+        detail: this.address.detail,
+        confirmed: this.address.confirmed === true
       },
       binaries: this.binaryStatus(),
       lastError: this.lastError
@@ -946,12 +956,52 @@ class ChainEngine extends EventEmitter {
     return snapshot;
   }
 
+  /**
+   * Catch up on an address the node could not be asked about at the time.
+   *
+   * It only ever ADDS information. If the node says the address is good, the
+   * app stops calling it unconfirmed; if the node says it is bad, that is
+   * said once, loudly, in the log - but the stored address is left alone,
+   * because silently discarding what somebody typed is worse than being
+   * wrong about it out loud.
+   */
+  async confirmAddressIfPending() {
+    if (!this.address.value || this.address.confirmed) return;
+    if (!(this.node && this.node.running)) return;
+    if (this._confirming) return;
+    this._confirming = true;
+    try {
+      const r = await validateWithNode(this.rpc, this.address.value);
+      if (r.confirmed === true && r.ok) {
+        this.address = { value: r.address, kind: r.kind, detail: r.detail, confirmed: true };
+        this.settings.payoutKind = r.kind;
+        this.settings.payoutDetail = r.detail;
+        this.saveSettings(this.settings);
+        this.log(`your node confirmed the payout address (${r.kind})`);
+      } else if (r.ok === false && r.confirmed === false && !r.error.includes('could not be checked')) {
+        this.log(`your node does not recognise the payout address: ${r.error}`);
+        this.address.confirmed = false;
+        this.address.rejected = true;
+      }
+    } catch { /* a node that stops mid-check is not an answer either */ } finally {
+      this._confirming = false;
+    }
+  }
+
   // ---------------------------------------------------------------- settings
   async setPayoutAddress(raw) {
     const result = await validateWithNode(this.rpc, raw);
     if (!result.ok) return result;
     const changed = result.address !== this.address.value;
-    this.address = { value: result.address, kind: result.kind, detail: result.detail };
+    this.address = {
+      value: result.address,
+      kind: result.kind,
+      detail: result.detail,
+      // False when the node could not be asked. The address is usable - the
+      // shape is right and mining will pay it - but the app does not claim
+      // the node has blessed it, and asks again once the node is up.
+      confirmed: result.confirmed === true
+    };
     this.settings.payoutAddress = result.address;
     this.settings.payoutKind = result.kind;
     this.settings.payoutDetail = result.detail;
@@ -970,7 +1020,9 @@ class ChainEngine extends EventEmitter {
     }
 
     this.saveSettings(this.settings);
-    this.log(`payout address set (${result.kind}); the node validated it`);
+    this.log(result.confirmed === true
+      ? `payout address set (${result.kind}); the node confirmed it`
+      : `payout address set (${result.kind}); it has the right shape but the node could not be asked yet`);
     // The node carries the payout in its own config, so it must be rewritten.
     if (changed && this.node && this.node.running) {
       await this.restartNode('the payout address changed');
@@ -1075,6 +1127,49 @@ class ChainEngine extends EventEmitter {
       return { port: chosen, moved: true };
     }
     this.log(`port ${wanted} is in use and no nearby port is free; the node will try ${wanted} anyway`);
+    return { port: wanted, moved: false };
+  }
+
+  /**
+   * The same for the RPC port, which is loopback-only.
+   *
+   * The P2P port got this treatment in testnet.2; the RPC port did not, and a
+   * second copy of the app on one machine died on start with a Rust panic:
+   *   server should start: Os { code: 10048, kind: AddrInUse }
+   * A user sees "the node stopped unexpectedly" and has nothing to go on.
+   *
+   * Nothing connects IN to this port - it is 127.0.0.1 and cookie-protected,
+   * and only this app talks to it - so moving it costs the user nothing at
+   * all. There is no reason for it ever to be the thing that stops a node.
+   */
+  async chooseRpcPort() {
+    if (this.node && this.node.running) return { port: this.rpcPort, moved: false };
+    const wanted = Number(this.rpcPort);
+    // 127.0.0.1, not 0.0.0.0: that is the address the node's RPC server binds,
+    // and on Windows a socket held on the loopback address does NOT stop a
+    // bind to 0.0.0.0 on the same port. Probing the wrong address reported the
+    // port free and let the node panic on it anyway.
+    const free = await canBindPort(wanted, '127.0.0.1');
+    if (free.ok) { this.rpcMoved = null; return { port: wanted, moved: false }; }
+
+    for (const candidate of [wanted + 1, wanted + 2, wanted + 3, 0]) {
+      const probe = await canBindPort(candidate || 0, '127.0.0.1');
+      if (!probe.ok) continue;
+      const chosen = candidate || (await freeEphemeralPort());
+      if (!chosen) continue;
+      this.rpcMoved = { wanted, chosen, why: free.detail };
+      this.log(
+        `the node's private control port ${wanted} is already in use (${free.detail}), so this ` +
+        `node will use ${chosen}. Nothing else changes: that port is only ever reached from ` +
+        'this machine, by this app.'
+      );
+      this.rpcPort = chosen;
+      // The client has to follow the server, or every call would go to
+      // whatever else is holding the old port.
+      this.rpc = new ZebraRpc({ host: '127.0.0.1', port: this.rpcPort, cookieDir: this.dataDir, timeoutMs: 12000 });
+      return { port: chosen, moved: true };
+    }
+    this.log(`the node's control port ${wanted} is in use and no nearby port is free; trying ${wanted} anyway`);
     return { port: wanted, moved: false };
   }
 

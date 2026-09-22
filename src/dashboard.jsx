@@ -344,6 +344,13 @@ export function NodeView({ s, api, cfg }) {
                 {n.p2pMoved ? <span className="dim"> (moved from {n.p2pMoved.wanted})</span> : null}
               </td>
             </tr>
+            <tr>
+              <td className="muted">Control port</td>
+              <td className="num">
+                {n.rpcPort} <span className="dim">this machine only</span>
+                {n.rpcMoved ? <span className="dim"> (moved from {n.rpcMoved.wanted})</span> : null}
+              </td>
+            </tr>
             </tbody>
           </table>
           <p className="tiny dim" style={{ marginTop: 10, marginBottom: 0 }}>
@@ -509,13 +516,38 @@ export function SettingsView({ s, cfg, api }) {
         <p className="small muted">The only thing this app stores about you. Change it any time; the node restarts to pick it up.</p>
         <input type="text" spellCheck={false} value={addr} onChange={(e) => setAddr(e.target.value)} />
         <div className="row" style={{ marginTop: 12 }}>
-          <span className="small muted">{s.payout.detail || 'Not set yet.'}</span>
+          <span className="small muted">
+            {s.payout.detail || 'Not set yet.'}
+            {s.payout.address && !s.payout.confirmed
+              ? <span className="dim"> · not confirmed by your node yet</span>
+              : null}
+          </span>
           <div className="spacer" />
           <button className="btn sm primary" disabled={!addr.trim() || addr.trim() === s.payout.address} onClick={async () => {
             setAddrResult(await api.setPayoutAddress(addr.trim()));
           }}>Save</button>
         </div>
+        {/* Three different things, never confused with each other: the node
+            rejected it, the node could not be asked, or it is confirmed. An
+            address is only ever called wrong when the node actually said so. */}
         {addrResult && !addrResult.ok ? <div style={{ marginTop: 10 }}><Notice kind="bad">{addrResult.error}</Notice></div> : null}
+        {addrResult && addrResult.ok && addrResult.note ? (
+          <div style={{ marginTop: 10 }}>
+            <Notice kind="plain">
+              <div style={{ width: '100%' }}>
+                <div>{addrResult.note}</div>
+                {!s.node.running ? (
+                  <button className="btn sm" style={{ marginTop: 10 }} onClick={() => api.startNode()}>
+                    Start the node
+                  </button>
+                ) : null}
+              </div>
+            </Notice>
+          </div>
+        ) : null}
+        {addrResult && addrResult.ok && addrResult.confirmed ? (
+          <div style={{ marginTop: 10 }}><Notice kind="ok">Saved. Your node confirmed it.</Notice></div>
+        ) : null}
       </div>
 
       <div className="card">

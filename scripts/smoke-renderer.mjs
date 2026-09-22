@@ -40,6 +40,7 @@ import http from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from './ws-min.mjs';
+import { startShots } from './cdp-shot.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
@@ -147,7 +148,7 @@ async function runProfile(profile, port) {
   if (profile.seed) fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify(profile.seed, null, 2));
 
   const child = spawn(exe, [`--remote-debugging-port=${port}`], {
-    env: { ...process.env, SWARM_NODE_DATA_DIR: dataDir, SWARM_NODE_TEST_RUN: '1' },
+    env: { ...process.env, SWARM_NODE_DATA_DIR: dataDir, SWARM_NODE_TEST_RUN: '1', SWARM_NODE_HEADLESS: '1' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   running.add(child);
@@ -204,6 +205,9 @@ async function runProfile(profile, port) {
     }
     check('the debug connection opens', true);
     await cdp.send('Runtime.enable');
+    // The window is never shown, so frames have to be asked for. See
+    // cdp-shot.mjs.
+    const shots = await startShots(cdp);
 
     const evaluate = async (expression) => {
       const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
@@ -222,6 +226,16 @@ async function runProfile(profile, port) {
       await sleep(400);
     }
     const mounted = check('React mounted into #root', children > 0, `#root has ${children} child element(s)`);
+
+    // The rule this harness exists under: no window of its own on anybody's
+    // desktop. A banner was not enough - the owner used a harness window
+    // twice. SWARM_NODE_HEADLESS creates the window with show:false.
+    //
+    // The RENDERER cannot answer this: the screencast used to photograph a
+    // hidden window makes document.visibilityState report "visible". The main
+    // process prints win.isVisible() at start-up, and that is what is checked.
+    const windowLine = (appOut.join('').split('\n').find((l) => l.includes('[window]')) || '(not printed)').trim();
+    check('the harness window is never shown', /headless=true isVisible=false/.test(windowLine), windowLine);
 
     // React mounting is not the same as the app having decided what to show:
     // the first paint is a "Starting SWARM Node..." placeholder while the main
@@ -307,11 +321,12 @@ async function runProfile(profile, port) {
 
     // ---- evidence, pass or fail ------------------------------------------
     try {
-      const img = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      const buf = await shots.take();
       const bad = results.slice(firstResult).some((r) => !r.ok);
       const out = path.join(artifactDir, `smoke-${profile.name}${bad ? '-FAILED' : ''}.png`);
-      fs.writeFileSync(out, Buffer.from(img.data, 'base64'));
-      console.log(`  screenshot: ${out}`);
+      fs.writeFileSync(out, buf);
+      console.log(`  screenshot: ${out}  (${(buf.length / 1024).toFixed(0)} KB)`);
+      await shots.stop();
     } catch (e) {
       console.error(`  could not take a screenshot: ${e.message}`);
     }

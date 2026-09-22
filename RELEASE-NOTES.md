@@ -1,4 +1,4 @@
-# SWARM Node 0.2.0-testnet.1
+# SWARM Node 0.2.0-testnet.3
 
 A small Windows app that turns your computer into a full node of the SWARM test
 network, and mines with your processor when you press Start.
@@ -6,6 +6,44 @@ network, and mines with your processor when you press Start.
 **This is a test network.** The coins it pays have no money value, they cannot
 be sold, and the whole chain may be wiped and started again. Nothing here is a
 promise of earnings. Please treat it as an experiment you are helping to run.
+
+---
+
+## What changed since 0.2.0-testnet.2
+
+All four of these came from someone installing the last build and telling us
+what happened.
+
+**The first-run wizard now actually runs.** It used to decide "this person has
+already been set up" by looking for two settings — a consent flag and a payout
+address — being present at all. Any machine that had those left over from an
+earlier build went straight to the dashboard, never having been shown around.
+The app now records, explicitly, that you reached the end of setup, and only
+that record skips it. If you have used an earlier build, you will see the wizard
+once more; your address is filled in already.
+
+**"Start mining" is never greyed out.** There is one main button on the Mining
+page and it always does the next useful thing — start your node, ask for an
+address, or start mining — with a line underneath saying why. While your node is
+still catching up it reads **Start mining when ready**: press it, walk away, and
+mining begins by itself the moment the work would count. Where a choice is
+unavailable, the reason is written next to it.
+
+**A five-step guided tour** runs once when setup finishes and explains each page
+while you are looking at it. You can leave it at any point, and replay it from
+Settings → *Show me around*.
+
+**The Swarm map says what it is.** It is an opt-in list of cities, never a count
+of the network, so your own node is not on it — the page now says so instead of
+leaving you wondering. Beside it is the one network-wide figure that can be
+checked: how many nodes the project's seed server is connected to, read from the
+seed's own status file and labelled for exactly what it is. The app still sends
+nothing about your location anywhere.
+
+**The Log reads in plain words.** Each line is tagged `node`, `miner` or `app`,
+and the internal module names the programs print for their own developers are
+stripped from the display. The node's own log files on disk keep every original
+line, for diagnosis.
 
 ---
 
@@ -33,8 +71,8 @@ Two ways, both 64-bit Windows 10 or newer:
 
 | File | What it is |
 | --- | --- |
-| `SWARM-Node-0.2.0-testnet.1-win-x64.exe` | The installer. Adds a Start-menu entry and an uninstall entry. |
-| `SWARM-Node-0.2.0-testnet.1-win-x64.zip` | Portable. Unzip it anywhere and run `SWARM Node.exe`. Installs nothing. |
+| `SWARM-Node-0.2.0-testnet.3-win-x64.exe` | The installer. Adds a Start-menu entry and an uninstall entry. |
+| `SWARM-Node-0.2.0-testnet.3-win-x64.zip` | Portable. Unzip it anywhere and run `SWARM Node.exe`. Installs nothing. |
 
 ### Windows will warn you, and here is why
 
@@ -49,7 +87,7 @@ pattern antivirus products watch for. Before you trust any of that, check the
 file you downloaded is the file that was built:
 
 1. Open PowerShell where you saved the file.
-2. Run `Get-FileHash .\SWARM-Node-0.2.0-testnet.1-win-x64.exe -Algorithm SHA256`
+2. Run `Get-FileHash .\SWARM-Node-0.2.0-testnet.3-win-x64.exe -Algorithm SHA256`
 3. Compare it with the matching line in `SHA256SUMS`.
 
 If those two strings differ, do not run the file.
@@ -96,12 +134,16 @@ never turn into this one behind your back. The two can sit side by side.
 3. **Let the machine check run.** Processor, memory, free disk space and whether
    the network port is free. All of it measured on your computer and none of it
    sent anywhere.
-4. **Press Start.**
+4. **Press Start.** If your node is still catching up, the button says *Start
+   mining when ready* — press it and it will begin on its own.
+5. **Take the tour.** Five short steps, one per page. It appears by itself when
+   setup finishes, and Settings → *Show me around* replays it whenever you like.
 
 ### Why mining sometimes refuses to start
 
-The app will not let you mine until your node has at least one other node to
-talk to and has finished downloading. That is not caution for its own sake: a
+The app will not let you *mine* until your node has at least one other node to
+talk to and has finished downloading — but it will always let you *press the
+button*. That is not caution for its own sake: a
 node mining on its own builds a private chain that everybody else throws away,
 so the electricity is spent for nothing. The screen always says which of the two
 is missing.

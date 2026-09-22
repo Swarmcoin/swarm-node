@@ -185,9 +185,11 @@ jobs:
         # offered to people as if it were part of the product (it was, in
         # build-0.2.0-testnet.2).
         run: node scripts/smoke-renderer.mjs release/win-unpacked smoke
-        # The script's own hard deadline is 150 s; this is the backstop, and
-        # it must never be the thing that ends the step.
-        timeout-minutes: 5
+        # The script's own hard deadline is 240 s (it now launches the app
+        # three times: a fresh profile, one seeded with the stray settings that
+        # used to suppress the wizard, and a completed one). This is the
+        # backstop, and it must never be the thing that ends the step.
+        timeout-minutes: 8
 
       - name: Checksums and release manifest
         shell: pwsh

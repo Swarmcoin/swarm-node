@@ -13,12 +13,48 @@
 // The only thing done locally is a cheap shape check to keep obviously
 // impossible input out of the RPC, and it never decides validity.
 //
+// WHAT WENT WRONG, 2026-09-22. The owner pasted a good unified address from a
+// synced SWARM Wallet and was told "The node does not recognise that address
+// on this network." The address was fine; the node never answered. Only three
+// transport error codes were mapped to "the node is not answering" - every
+// other failure (a rejected cookie, a timeout, a method the node does not
+// implement, a non-JSON reply) fell through to a sentence that ASSERTS the
+// node rejected the address. It is only ever true to say the node said no
+// when the node actually said no.
+//
+// So this file now distinguishes three outcomes, not two:
+//   confirmed     the node answered and accepted it;
+//   refused       the node answered and rejected it  -> blame the address;
+//   unconfirmed   the node did not answer at all     -> blame nothing, say
+//                 what happened, and let a well-formed address be used.
+//
 // No key, seed, passphrase or private material exists anywhere in this app.
 // A payout address is a public identifier; it is the only thing stored.
 
 'use strict';
 
+const { inspect } = require('./address-format');
+
 const MAX_LEN = 512;
+
+/**
+ * Error codes that mean "the node did not answer", as opposed to "the node
+ * answered no". This is a deny-list turned inside out on purpose: ANY error
+ * is treated as "no answer" unless the node produced a real verdict, because
+ * the cost of being wrong the other way is telling someone their good address
+ * is bad. `AUTH` (a stale cookie against another node on the same port) and
+ * `TIMEOUT` are in here because both of those really happened.
+ */
+const NO_ANSWER = new Set(['NO_COOKIE', 'NET', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'TIMEOUT', 'AUTH', 'PARSE']);
+
+/** A short, true description of why the node could not answer. */
+function whyNoAnswer(code) {
+  if (code === 'NO_COOKIE' || code === 'ECONNREFUSED' || code === 'NET') return 'your node is not running';
+  if (code === 'TIMEOUT') return 'your node did not answer in time';
+  if (code === 'AUTH') return 'something else is using your node’s control port';
+  if (code === 'PARSE') return 'your node gave an answer this app could not read';
+  return 'your node did not answer';
+}
 
 /** Cheap pre-filter. Says "worth asking the node", never "valid". */
 function plausible(addr) {
@@ -41,40 +77,38 @@ function plausible(addr) {
 async function validateWithNode(rpc, raw) {
   const address = String(raw == null ? '' : raw).trim();
   if (!plausible(address)) {
-    return { ok: false, address, kind: null, modes: [], detail: '', error: 'That does not look like a SWARM address. Copy it from the SWARM Wallet.' };
+    return { ok: false, address, kind: null, modes: [], detail: '', confirmed: false, error: 'That does not look like a SWARM address. Copy it from the SWARM Wallet.' };
   }
 
+  /** Did the node produce a verdict, or did the call simply fail? */
+  const ask = async (fn) => {
+    try {
+      return { answered: true, value: await fn() };
+    } catch (e) {
+      const code = e && e.code;
+      // Anything that is not an explicit "no" from the node counts as no
+      // answer, including RPC-level numeric codes such as method-not-found.
+      return { answered: false, noAnswer: NO_ANSWER.has(code) || typeof code === 'number' || code == null, code };
+    }
+  };
+
   // 1. Transparent first: it is the cheapest call and the common case.
-  try {
-    const t = await rpc.validateAddress(address);
-    if (t && t.isvalid === true) {
-      return {
-        ok: true,
-        address,
-        kind: 'transparent',
-        modes: ['standard'],
-        detail: 'Transparent address. Rewards paid to it are visible on the explorer.'
-      };
-    }
-  } catch (e) {
-    // A node that is not up yet is a different failure from an invalid address.
-    if (e.code === 'NO_COOKIE' || e.code === 'NET' || e.code === 'ECONNREFUSED') {
-      return { ok: false, address, kind: null, modes: [], detail: '', error: 'The node is not answering yet. Start the node, then check the address.' };
-    }
+  const t = await ask(() => rpc.validateAddress(address));
+  if (t.answered && t.value && t.value.isvalid === true) {
+    return {
+      ok: true,
+      address,
+      kind: 'transparent',
+      modes: ['standard'],
+      confirmed: true,
+      detail: 'Transparent address. Rewards paid to it are visible on the explorer.'
+    };
   }
 
   // 2. Shielded / unified.
-  let z = null;
-  try {
-    z = await rpc.zValidateAddress(address);
-  } catch (e) {
-    if (e.code === 'NO_COOKIE' || e.code === 'NET') {
-      return { ok: false, address, kind: null, modes: [], detail: '', error: 'The node is not answering yet. Start the node, then check the address.' };
-    }
-  }
-
-  if (z && z.isvalid === true) {
-    const type = String(z.address_type || z.type || '').toLowerCase();
+  const z = await ask(() => rpc.zValidateAddress(address));
+  if (z.answered && z.value && z.value.isvalid === true) {
+    const type = String(z.value.address_type || z.value.type || '').toLowerCase();
     if (type === 'unified') {
       let receivers = null;
       try { receivers = await rpc.zListUnifiedReceivers(address); } catch { /* optional detail */ }
@@ -84,6 +118,7 @@ async function validateWithNode(rpc, raw) {
         address,
         kind: 'unified',
         modes: ['shielded'],
+        confirmed: true,
         detail: kinds.length
           ? `Unified address holding ${kinds.join(', ')} receiver(s). Shielded mining pays into it directly.`
           : 'Unified address. Shielded mining pays into it directly.'
@@ -94,15 +129,46 @@ async function validateWithNode(rpc, raw) {
       address,
       kind: 'sapling',
       modes: [],
+      confirmed: true,
       detail: 'Shielded (Sapling) address. Neither mining mode can pay to it: the standard miner needs a transparent address and Zebra’s internal miner needs a unified address.'
     };
   }
 
+  // 3. Neither call produced a verdict. The node is not in a position to
+  //    judge, so neither is this app: fall back to the shape of the string,
+  //    accept it if it is well formed, and say plainly what is missing.
+  if (!t.answered || !z.answered) {
+    const why = whyNoAnswer(t.answered ? z.code : t.code);
+    const shape = inspect(address);
+    if (shape.looksValid) {
+      return {
+        ok: true,
+        address,
+        kind: shape.kind,
+        modes: shape.mode ? [shape.mode] : [],
+        confirmed: false,
+        detail: `${shape.label}. ${shape.detail}`,
+        note: `Saved, but not checked yet: ${why}. Start the node to confirm the address.`
+      };
+    }
+    return {
+      ok: false,
+      address,
+      kind: null,
+      modes: [],
+      confirmed: false,
+      detail: '',
+      error: `${shape.hint || 'That does not look like a SWARM address.'} It could not be checked either, because ${why}.`
+    };
+  }
+
+  // 4. The node answered, twice, and said no. Only now is it true to say so.
   return {
     ok: false,
     address,
     kind: null,
     modes: [],
+    confirmed: false,
     detail: '',
     error: 'The node does not recognise that address on this network. Check you copied it from a SWARM Wallet set to the same network.'
   };
@@ -115,4 +181,4 @@ function modesForKind(kind) {
   return [];
 }
 
-module.exports = { validateWithNode, plausible, modesForKind, MAX_LEN };
+module.exports = { validateWithNode, plausible, modesForKind, MAX_LEN, NO_ANSWER };
