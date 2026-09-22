@@ -17,7 +17,7 @@
 
 /** The action ids the renderer must handle. Anything else is a bug. */
 const ACTIONS = ['stop', 'start', 'arm', 'disarm', 'start-node', 'set-address', 'fix-binary', 'override',
-  'stop-foreign-node', 'choose-folder'];
+  'stop-foreign-node', 'choose-folder', 'start-everything'];
 
 /**
  * @param {object} state the engine snapshot (getState)
@@ -40,6 +40,15 @@ function nextAction(state) {
       m.mode === 'shielded'
         ? 'The node is mining to your shielded address.'
         : `${m.workers || 0} core${m.workers === 1 ? '' : 's'} are working for you.`);
+  }
+
+  // N-9. ONE PRESS. The user asked to mine and the app is working on it:
+  // starting the node, letting it catch up, waiting for the gate. There is no
+  // second button to find and no decision to make - the same button now stops
+  // it again, and the line underneath says where it has got to.
+  if (m.wanted) {
+    return act('stop', '■  Stop mining', 'danger',
+      workingOn(n, g), syncProgress(n, g));
   }
 
   // No address: nothing can be paid to anybody. This is the one case where
@@ -76,10 +85,12 @@ function nextAction(state) {
     return act('start-node', 'Try starting your node again', 'primary', n.trouble.text);
   }
 
-  // No node: mining talks to YOUR node, so that is the next thing.
+  // Everything from here is one press. Starting the node, choosing the engine
+  // the address allows and waiting for the chain are the app's work, not a
+  // sequence of buttons for somebody to discover.
   if (!n.running) {
-    return act('start-node', 'Start your node', 'primary',
-      'Your own node has to be running first; mining asks it what to work on.');
+    return act('start-everything', '▶  Start mining', 'primary',
+      'This starts your node, waits for it to catch up, and begins mining on its own.');
   }
 
   // The engine the user picked is not installed. Offering "start" here would
@@ -97,8 +108,16 @@ function nextAction(state) {
         : 'Your node is connected and up to date.');
   }
 
-  // The gate is closed. Never a dead end: arm it.
+  // The gate is closed and nobody has asked to mine yet: one press still.
   const progress = syncProgress(n, g);
+  if (!m.armed) {
+    return act('start-everything', '▶  Start mining', 'primary',
+      (g.message ? g.message + ' ' : '') + 'Press it and walk away: mining begins by itself.',
+      progress,
+      g.offerOverride
+        ? { id: 'override', label: 'Start anyway', why: 'This is taking longer than expected.' }
+        : null);
+  }
   if (m.armed) {
     return act('disarm', 'Cancel automatic start', 'primary',
       'Mining will begin by itself as soon as your node is ready. ' + (g.message || ''),
@@ -133,6 +152,15 @@ function syncProgress(node, gate) {
     total,
     label: `block ${mine.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`
   };
+}
+
+/** Where the one press has got to, in words. */
+function workingOn(node, gate) {
+  if (!node.running) return 'Starting your node…';
+  if (!Number.isInteger(node.height)) return 'Your node is starting up…';
+  if (!node.peers) return 'Looking for other nodes to download the chain from…';
+  if (gate.allow) return 'Your node is ready; mining is starting…';
+  return (gate.message ? gate.message + ' ' : '') + 'Mining begins by itself the moment it is ready.';
 }
 
 function act(id, label, tone, why, progress = null, alternative = null) {

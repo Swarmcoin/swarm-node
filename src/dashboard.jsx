@@ -29,6 +29,7 @@ export function MiningView({ s, api }) {
     setErr(null);
     let r = null;
     if (id === 'stop') r = await api.stopMining();
+    else if (id === 'start-everything') r = await api.startEverything();
     else if (id === 'start') r = await api.startMining();
     else if (id === 'arm') r = await api.armMining(true);
     else if (id === 'disarm') r = await api.armMining(false);

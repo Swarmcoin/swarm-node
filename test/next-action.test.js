@@ -80,15 +80,20 @@ test('no payout address is asked for before anything else', () => {
   assert.match(a.why, /pay/i);
 });
 
-test('a stopped node is started, not complained about', () => {
+test('a stopped node is started by the SAME button that mines', () => {
+  // N-9. "This needs to work all with just clicking start mining." One
+  // press starts the node, picks the engine and begins mining on its own.
   const a = nextAction(ready({ node: { running: false, height: null } }));
-  assert.equal(a.id, 'start-node');
+  assert.equal(a.id, 'start-everything');
+  assert.match(a.label, /Start mining/);
+  assert.ok(!/Start your node/.test(a.label), 'the user is not asked to start a node');
 });
 
-test('a closed gate arms mining instead of blocking it', () => {
+test('a closed gate is still one press, with the progress underneath', () => {
   const s = ready({ gate: { allow: false, message: 'Your node is still catching up.', networkHeight: 1010 }, node: { running: true, height: 120 } });
   const a = nextAction(s);
-  assert.equal(a.id, 'arm');
+  assert.equal(a.id, 'start-everything');
+  assert.match(a.label, /Start mining/);
   assert.match(a.why, /catching up/);
   // Real progress, from real heights.
   assert.deepEqual(a.progress, { done: 120, total: 1010, label: 'block 120 of 1,010' });
@@ -111,7 +116,7 @@ test('the override is offered as an alternative, never as the only way on', () =
     node: { running: true, height: 900 }
   });
   const a = nextAction(s);
-  assert.equal(a.id, 'arm');
+  assert.equal(a.id, 'start-everything');
   assert.ok(a.alternative, 'a second, enabled way forward');
   assert.equal(a.alternative.id, 'override');
   assert.ok(a.alternative.why.length > 10);
@@ -150,4 +155,35 @@ test('an address merely unconfirmed is NOT treated as refused', () => {
   // anybody mining: this is the case that produced a false accusation once.
   const s = ready({ payout: { address: 'tmEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMP', confirmed: false, rejected: false } });
   assert.equal(nextAction(s).id, 'start');
+});
+
+test('once pressed, the same button stops it and says where it has got to', () => {
+  // N-9: no second press anywhere on the path, and cancelling is the same
+  // button. The label is "Stop mining" throughout, so there is never a moment
+  // when the user cannot get out of it.
+  const stages = [
+    [{ running: false, height: null }, /Starting your node/],
+    [{ running: true, height: null }, /starting up/],
+    [{ running: true, height: 12, peers: 0 }, /Looking for other nodes/],
+    [{ running: true, height: 12, peers: 2 }, /by itself/]
+  ];
+  for (const [node, why] of stages) {
+    const a = nextAction(ready({
+      mining: { on: false, mode: 'shielded', standardAvailable: true, workers: 0, armed: false, wanted: true },
+      node,
+      gate: { allow: false, message: 'Your node is still catching up.', networkHeight: 1010 }
+    }));
+    assert.equal(a.id, 'stop', `node ${JSON.stringify(node)} must still offer a way out`);
+    assert.match(a.label, /Stop mining/);
+    assert.match(a.why, why);
+  }
+});
+
+test('the engine is chosen by the address, never asked of the user', () => {
+  // Both address kinds reach the same single button.
+  for (const address of ['tmEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMP',
+    'utest1ve9q2phl7hgu95nxg96d75v5hltu7wh4u2kpcz0t7dm2x7x8tns7hecem8m67e9uzruj2py7tu0s4sa5m59qcgw7936n3su40s9hrefr']) {
+    const a = nextAction(ready({ payout: { address }, node: { running: false, height: null } }));
+    assert.equal(a.id, 'start-everything');
+  }
 });

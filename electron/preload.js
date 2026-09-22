@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('engine', {
   stopMining: () => invoke('engine:stopMining'),
   armMining: (on) => invoke('engine:armMining', on === true),
   stopForeignNode: () => invoke('engine:stopForeignNode'),
+  startEverything: () => invoke('engine:startEverything'),
   setMiningMode: (mode) => invoke('engine:setMiningMode', mode),
   setIntensity: (n) => invoke('engine:setIntensity', n),
   setIdleOnly: (v) => invoke('engine:setIdleOnly', v),

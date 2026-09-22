@@ -114,7 +114,7 @@ class ChainEngine extends EventEmitter {
     };
     this._lastSeenHeight = null;
 
-    this.mining = { on: false, mode: this.settings.miningMode === 'shielded' ? 'shielded' : 'standard', startedAt: null, pausedByGate: false, pausedByIdle: false, armed: false };
+    this.mining = { on: false, mode: this.settings.miningMode === 'shielded' ? 'shielded' : 'standard', startedAt: null, pausedByGate: false, pausedByIdle: false, armed: false, wanted: false };
     // Drives internal_miner in the generated config. Kept separate from
     // mining.on so that stopping the node (which must also stop mining) can
     // never trigger a restart loop.
@@ -567,6 +567,68 @@ class ChainEngine extends EventEmitter {
   }
 
   /**
+   * ONE PRESS. Everything between here and a block is the app's problem.
+   *
+   * N-9. The owner's words: "This needs to work all with just clicking start
+   * mining." Before this, a new user pressed "Start your node", waited, then
+   * pressed "Start mining when ready", and had to know which engine their
+   * address allowed. None of that is their job. This starts the node if it is
+   * stopped, picks the engine the address dictates, and arms mining so it
+   * begins by itself the moment the work would count.
+   */
+  async startEverything() {
+    if (!this.address.value) return { ok: false, error: 'Paste a payout address first.' };
+
+    // The ADDRESS decides the engine, not the user. A unified address can
+    // only be paid by the node's own miner; a transparent one only by the
+    // multi-core miner. Choosing wrongly is a refusal the user cannot act on.
+    const want = this.address.kind === 'unified' ? 'shielded'
+      : this.address.kind === 'transparent' ? 'standard'
+        : null;
+    if (want && want !== this.mining.mode && !this.mining.on) {
+      this.mining.mode = want;
+      this.settings.miningMode = want;
+      this.saveSettings(this.settings);
+      this.log(want === 'shielded'
+        ? 'your address is a unified one, so mining runs inside the node'
+        : 'your address is a transparent one, so mining uses your processor cores');
+    }
+
+    this.mining.wanted = true;
+
+    if (!(this.node && this.node.running)) {
+      const started = await this.startNode();
+      if (!started.ok) {
+        // The node could not start. Keep the intent - the reason is on screen
+        // and one press of the button it offers should carry on from here.
+        return started;
+      }
+    }
+
+    // If the gate is already open there is nothing to wait for.
+    if (this.evaluateGate().allow) {
+      const r = await this.startMining();
+      if (r.ok === false) this.log(`could not start mining: ${r.error}`);
+      this.mining.wanted = true;
+      return r;
+    }
+
+    this.mining.armed = true;
+    this._settleNoted = false;
+    this.log('mining will start by itself as soon as your node is ready');
+    this.emit('state', this.getState());
+    return { ok: true, armed: true };
+  }
+
+  /** Stop wanting to mine, and stop mining. The same button, pressed again. */
+  async cancelMining() {
+    this.mining.wanted = false;
+    this.mining.armed = false;
+    this.mining.pausedByGate = false;
+    return this.stopMiningInternal('stopped by you');
+  }
+
+  /**
    * Arm mining so it starts by itself the moment the gate opens.
    *
    * This is what the Mining page's primary button does while the node is
@@ -585,9 +647,11 @@ class ChainEngine extends EventEmitter {
   }
 
   async stopMining() {
-    // Stopping by hand also cancels an armed start; otherwise the app would
-    // start mining again behind the user a minute later.
+    // Stopping by hand also cancels an armed start AND the standing intent;
+    // otherwise the app would start mining again behind the user a minute
+    // later, which is precisely what "stop" must not mean.
     this.mining.armed = false;
+    this.mining.wanted = false;
     return this.stopMiningInternal('stopped by you');
   }
 
@@ -925,6 +989,12 @@ class ChainEngine extends EventEmitter {
       this.mining.pausedByGate = false;
       this.log('mining resumed: the node has peers again and its tip is current');
       await this.startMining();
+    } else if (!this.mining.on && this.mining.wanted && !this.mining.armed && !this.mining.pausedByGate
+               && decision.allow && this.node && this.node.running) {
+      // The user pressed the one button and something interrupted the path
+      // between there and mining. The intent did not go away, so neither
+      // does the attempt.
+      this.mining.armed = true;
     } else if (!this.mining.on && this.mining.armed && decision.allow) {
       // The user pressed "Start mining when ready" while the node was still
       // catching up. This is that promise being kept.
@@ -1008,6 +1078,7 @@ class ChainEngine extends EventEmitter {
         intensity: this.effectiveWorkerCount(),
         maxWorkers: Math.max(1, (require('os').cpus().length || 2) - 1),
         armed: this.mining.armed === true,
+        wanted: this.mining.wanted === true,
         pausedByGate: this.mining.pausedByGate,
         pausedByIdle: this.mining.pausedByIdle,
         idleOnly: this.settings.idleOnly === true,

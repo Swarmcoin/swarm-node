@@ -181,3 +181,56 @@ test('the installer stops what is running from the folder it replaces, and nothi
   assert.ok(!/IM\s+"?zebrad\.exe/i.test(nsh), 'an installer must never kill every zebrad on the machine');
   assert.ok(!/IM\s+"?privacy-miner\.exe/i.test(nsh), 'nor every miner');
 });
+
+// The installer's actual command, run for real, against real processes.
+//
+// Running the NSIS installer itself in a test would install over whatever is
+// on this machine, so what is exercised here is the ONE line inside it: the
+// PowerShell that ends every process running from the folder being replaced.
+// Two stand-ins are started from two different folders. The one inside the
+// "install directory" must die; the one outside it must not, because on this
+// very machine there is a node the owner started by hand and an installer
+// that killed it would be worse than the problem it solves.
+test('the installer\u2019s kill command ends only what runs from the install folder', { skip: process.platform !== 'win32' ? 'Windows only' : false }, async () => {
+  const { execFileSync, spawn } = require('node:child_process');
+  const nsh = fs.readFileSync(path.join(__dirname, '..', 'build', 'installer.nsh'), 'utf8');
+  const m = /Get-CimInstance Win32_Process[^']*/.exec(nsh);
+  assert.ok(m, 'the installer must carry a command that stops the old version');
+
+  const inside = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-inst-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-other-'));
+  const copyNode = (dir) => {
+    const dest = path.join(dir, 'stand-in.exe');
+    fs.copyFileSync(process.execPath, dest);
+    return dest;
+  };
+  const a = copyNode(inside);
+  const b = copyNode(outside);
+  const live = (p) => spawn(p, ['-e', 'setTimeout(() => {}, 120000)'], { stdio: 'ignore' });
+  const pa = live(a);
+  const pb = live(b);
+  await new Promise((r) => setTimeout(r, 2500));
+
+  try {
+    // The installer's own line, with $INSTDIR resolved and NSIS's $$ escaping
+    // undone, exactly as NSIS would hand it to the shell.
+    // The match runs to the NSIS single quote, so it carries the closing
+    // double quote of PowerShell's -Command argument with it.
+    const cmd = m[0]
+      .replace(/"\s*$/, '')
+      .replace(/\$\$/g, '$')
+      .replace(/\\"/g, '"')
+      .replace(/\$INSTDIR/g, inside);
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd],
+      { stdio: 'ignore', timeout: 30000 });
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+    assert.equal(alive(pa.pid), false, 'the old version, inside the folder being replaced, must be stopped');
+    assert.equal(alive(pb.pid), true, 'a program outside that folder must be left alone');
+  } finally {
+    for (const p of [pa, pb]) { try { execFileSync('taskkill.exe', ['/PID', String(p.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* gone */ } }
+    await new Promise((r) => setTimeout(r, 800));
+    for (const d of [inside, outside]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* locked */ } }
+  }
+});

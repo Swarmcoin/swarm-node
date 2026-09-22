@@ -11,6 +11,13 @@ promise of earnings. Please treat it as an experiment you are helping to run.
 
 ## What changed since 0.2.0-testnet.3
 
+**One button, one press.** The Mining page says **Start mining**, and that is
+the only thing you ever press. It starts your node if it is not running, picks
+the engine your address allows — a `utest1…` address mines inside the node, a
+`tm…` address uses your processor cores — waits for the chain to catch up, and
+begins mining on its own. The line underneath says where it has got to. The
+same button stops it again at any point.
+
 **Installing a new version now stops the old one first.** It did not, and that
 broke mining outright: the previous version's node kept running in the
 background, still holding the chain folder, so the new one could not open it

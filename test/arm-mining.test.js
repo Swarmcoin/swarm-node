@@ -32,7 +32,7 @@ test('arming is reported in the state the UI renders', () => {
   assert.equal(e.getState().mining.armed, true);
   // And the button says so, rather than claiming mining has begun.
   const next = e.getState().next;
-  assert.ok(['disarm', 'start-node', 'set-address'].includes(next.id), `got ${next.id}`);
+  assert.ok(['disarm', 'start-everything', 'set-address', 'stop'].includes(next.id), `got ${next.id}`);
 });
 
 test('arming twice is not an error and does not double-log', () => {
@@ -76,4 +76,40 @@ test('the armed flag never allows mining by itself', () => {
   e.armMining(true);
   // The gate is the only thing that decides, and with no node there is none.
   assert.equal(e.evaluateGate().allow, false);
+});
+
+// N-9. The owner: "This needs to work all with just clicking start mining."
+test('one press sets the intent, picks the engine and needs no second press', async () => {
+  const e = engine();
+  e.address = {
+    value: 'utest1ve9q2phl7hgu95nxg96d75v5hltu7wh4u2kpcz0t7dm2x7x8tns7hecem8m67e9uzruj2py7tu0s4sa5m59qcgw7936n3su40s9hrefr',
+    kind: 'unified', detail: '', confirmed: true
+  };
+  e.mining.mode = 'standard';          // wrong for this address, on purpose
+  // A unit test must not spawn a real daemon into a folder that does not
+  // exist - it did, and hung. What is under test is the DECISION, so the
+  // node start is stubbed with the refusal a missing node would give.
+  e.startNode = async () => ({ ok: false, error: 'no node in a unit test' });
+  const r = await e.startEverything();
+  assert.equal(e.mining.mode, 'shielded', 'the ADDRESS chooses the engine');
+  assert.equal(e.mining.wanted, true, 'the intent survives a node that would not start');
+  assert.equal(r.ok, false, 'and the failure is reported rather than swallowed');
+});
+
+test('pressing stop really stops wanting to mine', async () => {
+  const e = engine();
+  e.mining.wanted = true;
+  e.mining.armed = true;
+  await e.stopMining();
+  assert.equal(e.mining.wanted, false, 'otherwise it would start again behind the user');
+  assert.equal(e.mining.armed, false);
+});
+
+test('a transparent address picks the multi-core engine', async () => {
+  const e = engine();
+  e.address = { value: 'tmEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMP', kind: 'transparent', detail: '', confirmed: true };
+  e.mining.mode = 'shielded';
+  e.startNode = async () => ({ ok: false, error: 'no node in a unit test' });
+  await e.startEverything();
+  assert.equal(e.mining.mode, 'standard');
 });
