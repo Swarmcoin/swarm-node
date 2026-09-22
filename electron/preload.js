@@ -45,5 +45,6 @@ contextBridge.exposeInMainWorld('shell', {
   openDataFolder: () => invoke('shell:openDataFolder'),
   openLink: (url) => invoke('shell:openLink', url),
   openWallet: () => invoke('shell:openWallet'),
-  chooseDataFolder: () => invoke('shell:chooseDataFolder')
+  chooseDataFolder: () => invoke('shell:chooseDataFolder'),
+  getMapData: (force) => invoke('shell:getMapData', force === true)
 });

@@ -8,11 +8,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Mark, Icon, Pill } from './ui.jsx';
 import { Welcome, Consent, Payout, MachineCheck } from './setup.jsx';
 import { MiningView, NodeView, RewardsView, SettingsView, LogView } from './dashboard.jsx';
+import { MapView } from './map.jsx';
 
 const TABS = [
   ['mining', 'Mining', 'mine'],
   ['node', 'Node', 'node'],
   ['rewards', 'Honey', 'honey'],
+  ['map', 'Swarm map', 'map'],
   ['settings', 'Settings', 'gear'],
   ['log', 'Log', 'log']
 ];
@@ -156,13 +158,6 @@ export default function App() {
               {id === 'rewards' && state.rewards.blocksFound ? <span className="nav-badge">{state.rewards.blocksFound}</span> : null}
             </button>
           ))}
-          {/* The swarm map lives on the website; this app ships no map data of
-              its own rather than invent hotspots. */}
-          <button className="nav-item" onClick={() => window.shell.openLink(cfg.links?.swarm_map || cfg.links?.website)}>
-            <Icon name="map" />
-            <span>Swarm map</span>
-            <span className="nav-badge"><Icon name="external" size={11} /></span>
-          </button>
         </nav>
 
         <div className="rail-foot">
@@ -192,6 +187,7 @@ export default function App() {
           {tab === 'mining' ? <MiningView s={state} api={api} /> : null}
           {tab === 'node' ? <NodeView s={state} api={api} /> : null}
           {tab === 'rewards' ? <RewardsView s={state} /> : null}
+          {tab === 'map' ? <MapView cfg={cfg} reducedMotion={!!cfg.reducedMotion} /> : null}
           {tab === 'settings' ? <SettingsView s={state} cfg={cfg} api={api} /> : null}
           {tab === 'log' ? <LogView lines={lines} /> : null}
         </div>

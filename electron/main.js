@@ -23,6 +23,7 @@ const fs = require('fs');
 
 const { ChainEngine } = require('./chain/engine');
 const { SettingsStore } = require('./config-store');
+const { MapData } = require('./chain/map-data');
 const V = require('./ipc-validate');
 
 // ---------------------------------------------------------------- identity
@@ -48,6 +49,7 @@ function loadManifest() {
 let manifest = null;
 let settings = null;
 let engine = null;
+let mapData = null;
 let win = null;
 let quitting = false;
 
@@ -183,6 +185,7 @@ function registerIpc() {
   handle('shell:openDataFolder', () => shell.openPath(engine.dataDir));
   handle('shell:openLink', (url) => shell.openExternal(V.externalUrl(url, allowedHosts)));
   handle('shell:openWallet', () => openWallet());
+  handle('shell:getMapData', (force) => mapData.get({ force: V.bool(force === undefined ? false : force, 'refresh') }));
   handle('shell:chooseDataFolder', async () => {
     const r = await dialog.showOpenDialog(win, {
       title: 'Where should the chain be stored?',
@@ -245,6 +248,10 @@ app.whenReady().then(() => {
   }
 
   hardenSession(session.defaultSession);
+
+  // The swarm map's data is fetched HERE, not by the renderer, which keeps
+  // connect-src 'none' in the page. One URL, validated, cached on disk.
+  mapData = new MapData(path.join(app.getPath('userData'), 'swarm-map.cache.json'));
 
   engine = new ChainEngine({
     manifest,

@@ -319,3 +319,57 @@ input[type='range'] { width: 100%; accent-color: var(--orange); }
 }
 
 .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.2); border-top-color: var(--orange); border-radius: 50%; animation: spin .8s linear infinite; }
+
+/* ---------------------------------------------------------------- swarm map */
+/* The same visual language as the map on swarm.green, ported to the app's
+   tokens. Geometry, projection and data are the website's; only the CSS names
+   are local. */
+.swarmmap { display: flex; flex-direction: column; gap: var(--sp-md); }
+.swarmmap-frame {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: radial-gradient(120% 90% at 50% 0%, rgba(255, 138, 31, .07), var(--void) 60%);
+}
+.swarmmap-frame::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--orange), transparent); opacity: .7;
+}
+.swarmmap-plot { display: block; width: 100%; height: auto; }
+.swarmmap-heat { mix-blend-mode: screen; }
+.swarmmap-halo { fill: rgba(255, 176, 32, .18); transition: fill .15s; }
+.swarmmap-hot { cursor: pointer; outline: none; }
+.swarmmap-hot:hover .swarmmap-halo,
+.swarmmap-hot:focus-visible .swarmmap-halo { fill: rgba(255, 176, 32, .38); }
+.swarmmap-hot:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.swarmmap-ring { animation: swarmmapPulse 3.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes swarmmapPulse {
+  0% { r: 6; opacity: .8 } 100% { r: 34; opacity: 0 }
+}
+.swarmmap-pill {
+  position: absolute; top: 16px; left: 18px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid rgba(255, 176, 32, .4); background: rgba(16, 14, 12, .85);
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .16em; color: var(--honey);
+}
+.swarmmap-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--honey); box-shadow: 0 0 8px var(--honey); }
+.swarmmap-key {
+  position: absolute; bottom: 16px; left: 18px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; border-radius: var(--r-sm);
+  background: rgba(16, 14, 12, .85); border: 1px solid var(--line);
+  font-family: var(--font-mono); font-size: 10px; color: var(--ink-low);
+}
+.swarmmap-key i { width: 110px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgba(255, 138, 31, .1), var(--orange), var(--honey)); }
+.swarmmap-stats {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--s1); overflow: hidden;
+}
+.swarmmap-stats > div { padding: 14px 16px; border-right: 1px solid var(--line); }
+.swarmmap-stats > div:last-child { border-right: 0; }
+.swarmmap-stats .v { font-family: var(--font-display); font-weight: 600; font-size: 22px; margin-top: 6px; color: var(--honey); }
+.swarmmap-stats .v.plain { color: var(--ink); font-size: 17px; }
+@media (max-width: 900px) {
+  .swarmmap-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .swarmmap-key { display: none; }
+}
