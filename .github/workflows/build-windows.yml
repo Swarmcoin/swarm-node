@@ -14,14 +14,10 @@ name: Build Windows installer
 on:
   workflow_dispatch:
     inputs:
-      zebrad_run_id:
-        description: 'privacy-zebra run id holding the Windows zebrad artifact'
+      binaries_tag:
+        description: 'Pre-release tag in this repo holding zebrad.exe and privacy-miner.exe'
         required: false
-        default: '35603263833'
-      tools_run_id:
-        description: 'privacy-zebra run id holding swarm-tools (privacy-miner.exe)'
-        required: false
-        default: '35626325459'
+        default: 'vendored-binaries-1'
   push:
     branches: [main]
     paths-ignore: ['**/*.md']
@@ -58,48 +54,30 @@ jobs:
         run: npm test
 
       # ---- the two binaries this app runs -------------------------------
-      # They are built in brs-holding/privacy-zebra, from the official Zebra
-      # source with no source changes, and downloaded here rather than rebuilt,
-      # so the thing that ships is the thing that was tested.
-      - name: Download zebrad from privacy-zebra
-        id: zebrad
-        continue-on-error: true
+      #
+      # Both are built in brs-holding/privacy-zebra from official Zebra 6.3.0
+      # source with no source changes. They are fetched rather than rebuilt, so
+      # the thing that ships is the thing that was tested.
+      #
+      # They come from a PRE-RELEASE of THIS private repository, not from the
+      # other repository's workflow artifacts. A private repo's GITHUB_TOKEN
+      # cannot read another repository's artifacts, whatever `actions: read`
+      # says — that is what broke run 35636846516. A release asset in the same
+      # repository is readable with the job's own token, and a release in a
+      # private repository is not public.
+      #
+      # This is a transport, not a trust anchor: the SHA-256 check two steps
+      # below is what actually decides, and it is pinned to the hashes the
+      # privacy-zebra runs produced.
+      - name: Download the pinned binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $runId = "${{ github.event.inputs.zebrad_run_id }}"
-          if (-not $runId) { $runId = "35603263833" }
-          New-Item -ItemType Directory -Force staging/zebrad | Out-Null
-          gh run download $runId -R brs-holding/privacy-zebra -n "zebrad-x86_64-pc-windows-msvc" -D staging/zebrad
-          Get-ChildItem -Recurse staging/zebrad | Select-Object FullName, Length
-
-      - name: Download privacy-miner from privacy-zebra
-        id: miner
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $runId = "${{ github.event.inputs.tools_run_id }}"
-          if (-not $runId) { $runId = "35626325459" }
-          New-Item -ItemType Directory -Force staging/tools | Out-Null
-          gh run download $runId -R brs-holding/privacy-zebra -n "swarm-tools-x86_64-pc-windows-msvc" -D staging/tools
-          Get-ChildItem -Recurse staging/tools | Select-Object FullName, Length
-
-      # A cross-repository artifact download needs `actions: read` on the
-      # source repo. privacy-zebra is public, so the job token normally has it;
-      # if a future policy change removes that, upload the two binaries as a
-      # workflow artifact of THIS repo named "vendored-binaries" and re-run —
-      # the step below picks that up instead, and everything after it is
-      # identical because the SHA-256 check is what decides.
-      - name: Fall back to a vendored upload
-        if: steps.zebrad.outcome != 'success' || steps.miner.outcome != 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          Write-Host "::warning::cross-repo artifact download failed; trying the vendored-binaries artifact of this repository"
-          New-Item -ItemType Directory -Force staging/vendored | Out-Null
-          gh run download -R ${{ github.repository }} -n "vendored-binaries" -D staging/vendored
-          Get-ChildItem -Recurse staging/vendored | Select-Object FullName, Length
+          $tag = "${{ github.event.inputs.binaries_tag }}"
+          if (-not $tag) { $tag = "vendored-binaries-1" }
+          New-Item -ItemType Directory -Force staging/bin | Out-Null
+          gh release download $tag -R ${{ github.repository }} -p "zebrad.exe" -p "privacy-miner.exe" -D staging/bin
+          Get-ChildItem -Recurse staging/bin | Select-Object FullName, Length
 
       - name: Collect and verify the binaries
         shell: pwsh
