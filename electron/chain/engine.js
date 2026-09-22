@@ -26,12 +26,11 @@ const { RewardLedger, coinbasePaidTo, parseMinedLine, splitSubsidy } = require('
 const { validateWithNode } = require('./address');
 const { machineCheck } = require('./hardware');
 const { requireBinary } = require('./binaries');
+const { TipOracle } = require('./tip-oracle');
 
 const TICK_MS = 1000;
 const SCAN_BUDGET_PER_TICK = 25;   // blocks re-checked per tick by the backstop scan
 const IDLE_THRESHOLD_S = 120;      // "pause while I'm using the machine"
-const CATCHUP_WINDOW_MS = 30000;   // how far back the catching-up check looks
-const CATCHUP_BLOCKS = 2;          // blocks in that window that mean "still downloading"
 
 class ChainEngine extends EventEmitter {
   /**
@@ -57,9 +56,21 @@ class ChainEngine extends EventEmitter {
     const gateCfg = this.manifest.sync_gate || {};
     this.gate = new SyncGate({
       minPeers: gateCfg.min_peers,
+      maxBehind: gateCfg.max_behind_blocks,
+      quietSeconds: gateCfg.quiet_seconds,
+      patienceSeconds: gateCfg.patience_seconds,
       maxTipAgeSec: this.settings.maxTipAgeSeconds || gateCfg.max_tip_age_seconds,
       firstNode: this.settings.firstNodeOverride === true
     });
+
+    // The independent view of the tip. See tip-oracle.js and defect N-1: a
+    // node cannot tell whether it is behind by looking only at itself.
+    this.tipOracle = new TipOracle({
+      url: this.settings.tipOracleUrl || gateCfg.tip_oracle_url || null
+    });
+    // When this node last accepted a new block, which separates "still
+    // downloading" from "the chain is simply quiet".
+    this.lastHeightChangeAt = null;
 
     this.ledger = new RewardLedger({
       maturity: (this.manifest.consensus || {}).coinbase_maturity_blocks,
@@ -86,10 +97,11 @@ class ChainEngine extends EventEmitter {
       height: null, bestHash: null, tipTimeUnix: null, tipAgeSec: null,
       peersIn: 0, peersOut: 0, peers: 0, verificationProgress: null,
       networkSolps: null, difficulty: null, stateBytes: null, synced: null,
-      estimatedHeight: null, catchingUp: false, blocksGainedRecently: 0
+      estimatedHeight: null,
+      // The independent view of the tip, and when it was taken.
+      networkHeight: null, networkHeightAt: null, networkHeightError: null
     };
-    // Recent (timestamp, height) samples, used to spot an initial download.
-    this.heightHistory = [];
+    this._lastSeenHeight = null;
 
     this.mining = { on: false, mode: this.settings.miningMode === 'shielded' ? 'shielded' : 'standard', startedAt: null, pausedByGate: false, pausedByIdle: false };
     // Drives internal_miner in the generated config. Kept separate from
@@ -447,15 +459,37 @@ class ChainEngine extends EventEmitter {
 
   // ---------------------------------------------------------------- gate
   evaluateGate() {
+    const oracle = this.tipOracle.current();
     return this.gate.evaluate({
       nodeRunning: !!(this.node && this.node.running),
-      synced: this.chain.synced,
       peers: this.chain.peers,
+      height: this.chain.height,
+      networkHeight: oracle ? oracle.height : null,
+      networkSource: oracle ? 'the SWARM wallet server' : null,
+      secondsSinceNewBlock: this.lastHeightChangeAt == null
+        ? null
+        : Math.round((Date.now() - this.lastHeightChangeAt) / 1000),
       tipAgeSec: this.chain.tipAgeSec,
       addressKind: this.address.kind,
-      catchingUp: this.chain.catchingUp === true,
       mode: this.mining.mode
     });
+  }
+
+  /**
+   * "Start anyway". Only accepted once the gate itself offers it, which it does
+   * after the patience window and only for a network-health reason. It is the
+   * user disagreeing with a guess, not a way around a missing address.
+   */
+  setUserOverride(on) {
+    const want = on === true;
+    if (want && !this.evaluateGate().offerOverride) {
+      return { ok: false, error: 'Mining is not being held back by anything you can override right now.' };
+    }
+    this.gate.setUserOverride(want);
+    this.log(want
+      ? 'you chose to start mining anyway; your node may not be on the network’s best chain'
+      : 'the "start anyway" choice was switched off');
+    return { ok: true, userOverride: want };
   }
 
   // ---------------------------------------------------------------- rewards
@@ -628,32 +662,28 @@ class ChainEngine extends EventEmitter {
       this.chain.networkSolps = Number.isFinite(v) && v > 0 ? v : null;
     } catch { /* keep the previous value */ }
 
-    // Are blocks still arriving in a burst? During an initial download a node
-    // pulls blocks far faster than the network makes them (75 s apart here),
-    // so several in half a minute means "still catching up" no matter how
-    // fresh the newest block looks. This is the only catching-up signal that
-    // is observed rather than extrapolated — see the note in sync-gate.js.
-    if (Number.isInteger(this.chain.height)) {
-      const now = Date.now();
-      this.heightHistory.push({ t: now, h: this.chain.height });
-      while (this.heightHistory.length && now - this.heightHistory[0].t > CATCHUP_WINDOW_MS) this.heightHistory.shift();
-      const oldest = this.heightHistory[0];
-      const gained = oldest ? this.chain.height - oldest.h : 0;
-      this.chain.blocksGainedRecently = gained;
-      // No "has the window filled yet" condition on purpose: gaining several
-      // blocks in the first seconds after start is the clearest possible sign
-      // of an initial download, and that is exactly when it must be caught.
-      // The network itself makes a block every ~75 s, so two blocks inside
-      // half a minute is never normal chain progress.
-      this.chain.catchingUp = gained >= CATCHUP_BLOCKS;
+    // When did this node last accept a new block? That separates "still
+    // downloading" (blocks pouring in) from "the chain is quiet" (nothing
+    // arriving because nothing was made), which tip age alone cannot do.
+    if (Number.isInteger(this.chain.height) && this.chain.height !== this._lastSeenHeight) {
+      this._lastSeenHeight = this.chain.height;
+      this.lastHeightChangeAt = Date.now();
     }
 
-    // "Up to date, as far as this node can tell": it has peers, blocks have
-    // stopped arriving in a burst, and the newest block is not old. It is
-    // never a claim of certainty — no peer on this network reports its height.
+    // Ask the independent tip oracle. It rate-limits itself and never throws.
+    this.tipOracle.refresh().catch(() => {});
+    const oracle = this.tipOracle.current();
+    this.chain.networkHeight = oracle ? oracle.height : null;
+    this.chain.networkHeightAt = oracle ? oracle.at : null;
+    this.chain.networkHeightError = oracle ? null : this.tipOracle.lastError;
+
+    // "Up to date": peers, and within a block or two of the independent tip.
+    // Never a claim of certainty, and never derived from tip age alone.
     const minPeers = this.gate.minPeers;
-    if (this.chain.peers < minPeers || !Number.isFinite(this.chain.tipAgeSec)) this.chain.synced = null;
-    else this.chain.synced = !this.chain.catchingUp && this.chain.tipAgeSec <= this.gate.maxTipAgeSec;
+    if (this.chain.peers < minPeers) this.chain.synced = null;
+    else if (oracle && Number.isInteger(this.chain.height)) {
+      this.chain.synced = oracle.height - this.chain.height <= this.gate.maxBehind;
+    } else this.chain.synced = null;
   }
 
   idleGate() {
@@ -730,8 +760,9 @@ class ChainEngine extends EventEmitter {
         peersIn: this.chain.peersIn,
         peersOut: this.chain.peersOut,
         synced: this.chain.synced,
-        catchingUp: this.chain.catchingUp === true,
-        blocksGainedRecently: this.chain.blocksGainedRecently,
+        networkHeight: this.chain.networkHeight,
+        networkHeightAt: this.chain.networkHeightAt,
+        networkHeightError: this.chain.networkHeightError,
         verificationProgress: this.chain.verificationProgress,
         stateBytes: this.chain.stateBytes,
         dataDir: this.dataDir,
@@ -797,6 +828,20 @@ class ChainEngine extends EventEmitter {
     this.settings.payoutAddress = result.address;
     this.settings.payoutKind = result.kind;
     this.settings.payoutDetail = result.detail;
+
+    // Pre-select the engine the address can actually use, rather than leaving
+    // "Standard - many cores" selected next to a shielded-only address. A
+    // transparent address drives the multi-core miner; a unified one drives
+    // the node's own single-thread miner. There is no third option.
+    const fits = Array.isArray(result.modes) && result.modes.length ? result.modes[0] : null;
+    if (fits && fits !== this.mining.mode && !this.mining.on) {
+      this.mining.mode = fits;
+      this.settings.miningMode = fits;
+      this.log(fits === 'shielded'
+        ? 'that is a unified address, so shielded mining (one core) is selected'
+        : 'that is a transparent address, so standard mining (many cores) is selected');
+    }
+
     this.saveSettings(this.settings);
     this.log(`payout address set (${result.kind}); the node validated it`);
     // The node carries the payout in its own config, so it must be rewritten.

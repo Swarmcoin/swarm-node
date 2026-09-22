@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('engine', {
   setIntensity: (n) => invoke('engine:setIntensity', n),
   setIdleOnly: (v) => invoke('engine:setIdleOnly', v),
   setPayoutAddress: (addr) => invoke('engine:setPayoutAddress', addr),
+  setUserOverride: (on) => invoke('engine:setUserOverride', on),
   setFirstNodeOverride: (on, phrase) => invoke('engine:setFirstNodeOverride', on, phrase),
   setDataDir: (dir) => invoke('engine:setDataDir', dir),
   machineCheck: () => invoke('engine:machineCheck'),

@@ -148,6 +148,7 @@ function registerIpc() {
   handle('engine:setIntensity', (n) => engine.setIntensity(V.int(n, { min: 1, max: 256, name: 'intensity' })));
   handle('engine:setIdleOnly', (v) => engine.setIdleOnly(V.bool(v, 'idle-only')));
   handle('engine:setPayoutAddress', (addr) => engine.setPayoutAddress(V.payoutAddress(addr)));
+  handle('engine:setUserOverride', (on) => engine.setUserOverride(V.bool(on, 'start anyway')));
   handle('engine:setFirstNodeOverride', (on, phrase) =>
     engine.setFirstNodeOverride(V.bool(on, 'override'), on ? V.confirmPhrase(phrase) : ''));
   handle('engine:machineCheck', () => engine.machineCheck());

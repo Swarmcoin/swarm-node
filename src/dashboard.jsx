@@ -51,9 +51,44 @@ export function MiningView({ s, api }) {
 
       {!g.allow ? (
         <Notice kind={g.reason === 'no-peers' || g.reason === 'tip-too-old' ? 'warn' : 'plain'}>
-          <div>
+          <div style={{ width: '100%' }}>
             <b>Mining is held back.</b>
             <div style={{ marginTop: 4 }}>{g.message}</div>
+            {/* The numbers being waited for, always. "Why can I not click
+                mining" must be answerable from the screen. */}
+            <div className="row wrap tiny" style={{ marginTop: 10, gap: 16, opacity: 0.85 }}>
+              <span>your node: <b className="mono">{g.myHeight == null ? '—' : '#' + g.myHeight}</b></span>
+              <span>
+                network: <b className="mono">{g.networkHeight == null ? '—' : '#' + g.networkHeight}</b>
+                {g.networkSource ? ` (${g.networkSource})` : ''}
+              </span>
+              <span>peers: <b className="mono">{g.peers == null ? '—' : g.peers}</b></span>
+              {g.blockedForSec > 5 ? <span>held back for <b className="mono">{fmtDuration(g.blockedForSec)}</b></span> : null}
+            </div>
+            {g.rule ? <div className="tiny dim" style={{ marginTop: 6 }}>Rule in force: {g.rule}.</div> : null}
+            {g.offerOverride ? (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.1)' }}>
+                <div className="small">
+                  This has gone on long enough that it may be wrong. If those two numbers look right
+                  to you, you can start anyway — your node may not be on the network&apos;s best
+                  chain, and blocks you find could be discarded.
+                </div>
+                <button className="btn sm" style={{ marginTop: 10 }} onClick={() => api.setUserOverride(true)}>
+                  Start anyway
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </Notice>
+      ) : null}
+      {g.overridden && !g.firstNode && g.userOverride ? (
+        <Notice kind="warn">
+          <div>
+            <b>Mining anyway, at your request.</b>
+            <div style={{ marginTop: 4 }}>{g.message}</div>
+            <button className="btn sm" style={{ marginTop: 10 }} onClick={() => api.setUserOverride(false)}>
+              Go back to waiting for the network
+            </button>
           </div>
         </Notice>
       ) : null}
@@ -416,6 +451,12 @@ export function SettingsView({ s, cfg, api }) {
             <tr><td className="muted">Automatic updates</td><td className="num">off — this testnet build has no update feed</td></tr>
           </tbody>
         </table>
+        <p className="tiny dim" style={{ marginTop: 12, marginBottom: 0 }}>
+          The node software is Zebra 6.3.0 by the Zcash Foundation, licensed MIT or Apache-2.0 and
+          built from unmodified source. SWARM Node adds no consensus or cryptographic code of its
+          own. The fonts are Sora, Manrope and JetBrains Mono, under the SIL Open Font License 1.1.
+          This app is MIT licensed.
+        </p>
         {!s.binaries.zebrad.ok ? <div style={{ marginTop: 12 }}><Notice kind="bad">{s.binaries.zebrad.reason}</Notice></div> : null}
       </div>
 

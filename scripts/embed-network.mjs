@@ -54,10 +54,17 @@ const out = {
   },
   sync_gate: {
     min_peers: 1,
-    max_tip_age_seconds: 5400,
-    max_tip_age_note:
-      'Target spacing is 75 s, but a young testnet with little hash power has long gaps. ' +
-      '90 minutes is loose enough not to nag and tight enough to catch a node that is really behind.'
+    max_behind_blocks: 2,
+    quiet_seconds: 45,
+    patience_seconds: 600,
+    max_tip_age_seconds: 7200,
+    // The independent view of the tip. A different machine running different
+    // code on the same chain, which is the only honest way to answer "am I
+    // behind" — see electron/chain/tip-oracle.js and defect N-1.
+    tip_oracle_url: 'https://lwd.swarm.green:443',
+    note:
+      'Tip age is a weak hint only. Block spacing averages 60-90 s but is a Poisson process, ' +
+      'so multi-minute gaps are ordinary and a rule that needs a young tip holds back a synced node.'
   },
   // The project's OFFICIAL CHANNELS, set by the owner on 2026-09-21 and
   // recorded in D:/privacy/README.md. These are the only https addresses the

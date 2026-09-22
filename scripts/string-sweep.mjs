@@ -68,14 +68,21 @@ const EVERYWHERE = [
 
 // ---- allow-list predicates ------------------------------------------------
 
-// "zebrad" is the real file name of the program the app runs, and hiding that
-// would be dishonest. It is allowed in code, in file names, in the log, and in
-// an About line that names it. It is NOT allowed as the product's own name.
+// "zebrad" is the real name of the program the app runs, and hiding it would
+// be dishonest — the planner asked for an About line that names it. What must
+// NOT happen is the product calling ITSELF Zebra, so the rule is about where
+// the word appears:
+//   * the engine's log lines, the generated node config, and the network
+//     manifest's provenance fields all name the real program on purpose;
+//   * third-party packages are not ours to rewrite;
+//   * in the RENDERER, only attribution may name it.
 function allowZebra(line, file) {
-  if (!/\.(jsx|html|md)$/.test(file) && !file.includes('asar')) return true;   // code and configs
+  const f = String(file).replace(/\\/g, '/');
+  if (f.includes('node_modules/')) return true;
+  if (/(^|!)electron\//.test(f) || f.startsWith('electron/')) return true;
   if (/zebrad?\.exe|zebra\.toml|zebra-chain|zebra-rpc|zebrad::/i.test(line)) return true;
-  if (/Zcash Foundation|MIT|Apache/i.test(line)) return true;                   // attribution
-  if (/node program|node software|built from unmodified source/i.test(line)) return true;
+  if (/Zcash Foundation|MIT|Apache/i.test(line)) return true;
+  if (/node program|node software|node software|built from unmodified source|runs the node/i.test(line)) return true;
   return false;
 }
 
@@ -113,8 +120,11 @@ function userReadableText(source, file) {
     .join('\n');
 }
 
-// The one official address, and only that one.
-function allowOfficialEmail(line) {
+// The one official address, and only that one. Third-party package metadata
+// carries its authors' addresses and is not ours to rewrite; those files are
+// never shown to a user.
+function allowOfficialEmail(line, file) {
+  if (String(file).replace(/\\/g, '/').includes('node_modules/')) return true;
   const m = line.match(/[\w.+-]+@[\w-]+\.[\w.]+/g) || [];
   return m.every((e) => e === 'swarmofficial@atomicmail.io' || e === 'noreply@anthropic.com');
 }
@@ -160,13 +170,49 @@ function walk(dir, out = []) {
   return out;
 }
 
+/**
+ * Read an asar archive without a dependency.
+ *
+ * Layout: four little-endian uint32s, then the header JSON, then the file
+ * contents at a 4-byte-aligned base offset.
+ *   [0]  4                      (size of the next pickle field)
+ *   [4]  header pickle size
+ *   [8]  header string size + 4
+ *   [12] header string size
+ *   [16] header JSON
+ * @returns {{name:string, content:Buffer}[]}
+ */
+function readAsar(buf) {
+  if (buf.length < 16) throw new Error('not an asar archive');
+  const headerSize = buf.readUInt32LE(12);
+  const header = JSON.parse(buf.subarray(16, 16 + headerSize).toString('utf8'));
+  const base = 16 + Math.ceil(headerSize / 4) * 4;
+  const out = [];
+  const walkNode = (node, prefix) => {
+    for (const [name, entry] of Object.entries(node.files || {})) {
+      const full = prefix ? `${prefix}/${name}` : name;
+      if (entry.files) walkNode(entry, full);
+      else if (entry.offset != null) {
+        const start = base + Number(entry.offset);
+        out.push({ name: full, content: buf.subarray(start, start + Number(entry.size)) });
+      }
+    }
+  };
+  walkNode(header, '');
+  return out;
+}
+
 const target = process.argv[2];
 let hits = [];
 let scanned = 0;
 
 if (target) {
-  // Packaged mode: read the asar (or any file) as bytes and sweep the printable
-  // strings, which is what an auditor would actually look at.
+  // Packaged mode. The point is to check what SHIPPED, not the source tree,
+  // so the archive is unpacked and each file inside is judged by the same rule
+  // as its source counterpart: string literals and JSX text, not comments and
+  // not identifiers. Sweeping the archive's raw bytes instead would flag every
+  // code comment and every provenance note in the network manifest, which is
+  // noise that teaches people to ignore the check.
   const file = fs.statSync(target).isDirectory()
     ? (() => {
         const found = walk(target).find((f) => f.endsWith('app.asar'));
@@ -175,11 +221,16 @@ if (target) {
       })()
     : target;
   const buf = fs.readFileSync(file);
-  // Printable runs of 6+ characters, the classic `strings` behaviour.
-  const text = buf.toString('latin1').replace(/[^\x20-\x7e\n]+/g, '\n');
-  hits = sweepText(text, path.basename(file) + ' (packaged)');
-  scanned = 1;
-  console.log(`swept ${file} (${buf.length} bytes)`);
+  const entries = readAsar(buf);
+  console.log(`swept ${file} (${buf.length} bytes, ${entries.length} files inside)`);
+  for (const { name, content } of entries) {
+    if (LICENCE_FILES.test(name)) continue;
+    if (/\.(png|ico|woff2?|ttf|jpg|jpeg|gif|node|exe|dll|map)$/i.test(name)) continue;
+    let text;
+    try { text = content.toString('utf8'); } catch { continue; }
+    hits.push(...sweepText(userReadableText(text, name), `app.asar!${name}`));
+    scanned += 1;
+  }
 } else {
   // What a user can read: the renderer, plus the engine strings that reach it.
   const USER_FACING = /^(src|electron)[\\/]/;

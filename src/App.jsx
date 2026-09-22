@@ -35,6 +35,7 @@ export default function App() {
     setIntensity: (n) => window.engine.setIntensity(n),
     setIdleOnly: (v) => window.engine.setIdleOnly(v),
     setPayoutAddress: (a) => window.engine.setPayoutAddress(a),
+    setUserOverride: (on) => window.engine.setUserOverride(on),
     setFirstNodeOverride: async (on, phrase) => {
       const r = await window.engine.setFirstNodeOverride(on, phrase);
       setCfg(await window.shell.getConfig());
