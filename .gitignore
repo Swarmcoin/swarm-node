@@ -4,3 +4,7 @@ release/
 resources/bin/
 *.log
 .DS_Store
+out/
+smoke/
+_harness/
+_review/

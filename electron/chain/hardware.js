@@ -74,7 +74,14 @@ async function machineCheck(opts = {}) {
   const freeBytes = freeSpaceBytes(opts.dataDir || os.homedir());
   const freeGb = freeBytes == null ? null : freeBytes / 1073741824;
   const port = Number(opts.p2pPort) || 0;
-  const bind = port ? await canBindPort(port) : { ok: false, detail: 'no port configured' };
+  // If OUR OWN node is already listening there, the port is not "taken by
+  // another program" — it is doing exactly what it should. The check ran after
+  // the payout step had started the node and reported the app's own node as a
+  // conflict, which is alarming and wrong.
+  const ours = opts.ownNodeRunning === true && Number(opts.ownNodePort) === port;
+  const bind = ours
+    ? { ok: true, detail: 'in use by your own node, which is what it is for' }
+    : port ? await canBindPort(port) : { ok: false, detail: 'no port configured' };
 
   const checks = [
     {
@@ -102,9 +109,11 @@ async function machineCheck(opts = {}) {
       key: 'port',
       name: `Port ${port} for other nodes`,
       requirement: 'free on this machine',
-      found: bind.ok
-        ? 'free on this machine — whether your router lets other nodes in cannot be tested from here'
-        : `not usable: ${bind.detail}`,
+      found: ours
+        ? bind.detail
+        : bind.ok
+          ? 'free on this machine — whether your router lets other nodes in cannot be tested from here'
+          : `${bind.detail}. Your node will still run and mine; other nodes just cannot connect in to you.`,
       result: bind.ok ? 'pass' : 'warn'
     },
     {
@@ -131,3 +140,18 @@ async function machineCheck(opts = {}) {
 }
 
 module.exports = { machineCheck, cpuInfo, freeSpaceBytes, canBindPort, MIN_CORES, MIN_RAM_GB, MIN_FREE_GB };
+
+/** Ask the operating system for a port nobody is using. */
+function freeEphemeralPort() {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(null));
+    srv.once('listening', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+    try { srv.listen(0, '0.0.0.0'); } catch { resolve(null); }
+  });
+}
+
+module.exports.freeEphemeralPort = freeEphemeralPort;

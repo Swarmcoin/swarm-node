@@ -24,7 +24,7 @@ const { MinerPool } = require('./miner');
 const { SyncGate, tipAgeSeconds, REASON } = require('./sync-gate');
 const { RewardLedger, coinbasePaidTo, parseMinedLine, splitSubsidy } = require('./rewards');
 const { validateWithNode } = require('./address');
-const { machineCheck } = require('./hardware');
+const { machineCheck, canBindPort, freeEphemeralPort } = require('./hardware');
 const { requireBinary } = require('./binaries');
 const { TipOracle } = require('./tip-oracle');
 
@@ -83,6 +83,8 @@ class ChainEngine extends EventEmitter {
     this.rpcPort = Number(this.settings.rpcPort) || Number(ports.rpc);
     // The canonical manifest calls it public_p2p; fixtures may say p2p.
     this.p2pPort = Number(this.settings.p2pPort) || Number(ports.p2p != null ? ports.p2p : ports.public_p2p);
+    // Set when the network's port was taken and the node moved to another.
+    this.p2pMoved = null;
 
     this.rpc = new ZebraRpc({ host: '127.0.0.1', port: this.rpcPort, cookieDir: this.dataDir, timeoutMs: 12000 });
 
@@ -177,6 +179,8 @@ class ChainEngine extends EventEmitter {
       return { ok: false, error: bin.reason };
     }
     this.log(`zebrad verified, SHA-256 ${bin.sha256}`);
+
+    await this.chooseP2pPort();
 
     fs.mkdirSync(this.dataDir, { recursive: true });
     this.node = new ZebraNode({ binaryPath: bin.path, dataDir: this.dataDir, manifest: this.manifest });
@@ -798,6 +802,7 @@ class ChainEngine extends EventEmitter {
         stateBytes: this.chain.stateBytes,
         dataDir: this.dataDir,
         p2pPort: this.p2pPort,
+        p2pMoved: this.p2pMoved,
         rpcPort: this.rpcPort,
         lastStop: this.node ? this.node.lastStopReport : null,
         genesis: this.genesisState
@@ -941,7 +946,46 @@ class ChainEngine extends EventEmitter {
   }
 
   async machineCheck() {
-    return machineCheck({ dataDir: this.dataDir, p2pPort: this.p2pPort });
+    return machineCheck({
+      dataDir: this.dataDir,
+      p2pPort: this.p2pPort,
+      ownNodeRunning: !!(this.node && this.node.running),
+      ownNodePort: this.p2pPort
+    });
+  }
+
+  /**
+   * Make sure the node has a port it can actually bind.
+   *
+   * If the network's port is taken by something else, the node does NOT fail:
+   * it moves to a free one. Outbound connections still sync the chain and
+   * mining still works; the only thing lost is other nodes being able to
+   * connect IN, and the UI says exactly that rather than leaving the user with
+   * a node that will not start.
+   */
+  async chooseP2pPort() {
+    if (this.node && this.node.running) return { port: this.p2pPort, moved: false };
+    const wanted = Number(this.p2pPort);
+    const free = await canBindPort(wanted);
+    if (free.ok) { this.p2pMoved = null; return { port: wanted, moved: false }; }
+
+    for (const candidate of [wanted + 1, wanted + 2, wanted + 3, 0]) {
+      // 0 asks the operating system for any free port.
+      const probe = await canBindPort(candidate || 0);
+      if (!probe.ok) continue;
+      const chosen = candidate || (await freeEphemeralPort());
+      if (!chosen) continue;
+      this.p2pMoved = { wanted, chosen, why: free.detail };
+      this.log(
+        `port ${wanted} is already in use (${free.detail}), so the node will listen on ${chosen} instead. ` +
+        'It will still sync and mine; other nodes just cannot connect in to you until ' +
+        `port ${wanted} is free.`
+      );
+      this.p2pPort = chosen;
+      return { port: chosen, moved: true };
+    }
+    this.log(`port ${wanted} is in use and no nearby port is free; the node will try ${wanted} anyway`);
+    return { port: wanted, moved: false };
   }
 
   // ---------------------------------------------------------------- shutdown

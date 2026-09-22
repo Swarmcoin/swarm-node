@@ -265,6 +265,19 @@ export function NodeView({ s, api, cfg }) {
         <Metric label="On disk" value={n.stateBytes == null ? null : fmtBytes(n.stateBytes)} detail="chain database" edge="var(--green)" />
       </div>
 
+      {n.p2pMoved ? (
+        <Notice kind="info">
+          <div>
+            <b>Your node is listening on port {n.p2pMoved.chosen} instead of {n.p2pMoved.wanted}.</b>
+            <div style={{ marginTop: 4 }}>
+              Port {n.p2pMoved.wanted} was already in use ({n.p2pMoved.why}). Your node still syncs
+              and mining still works — the only thing missing is other nodes being able to connect
+              in to you. Free port {n.p2pMoved.wanted} and restart the node to get that back.
+            </div>
+          </div>
+        </Notice>
+      ) : null}
+
       <div className="grid c2">
         <div className="card">
           <h3>Network</h3>
@@ -274,7 +287,13 @@ export function NodeView({ s, api, cfg }) {
               <tr><td className="muted">Network hash rate</td><td className="num">{s.network_stats.networkSolps == null ? '—' : fmtSolps(s.network_stats.networkSolps)}</td></tr>
               <tr><td className="muted">Difficulty</td><td className="num">{s.network_stats.difficulty == null ? '—' : s.network_stats.difficulty.toFixed(4)}</td></tr>
               <tr><td className="muted">Node uptime</td><td className="num">{n.running ? fmtDuration(n.uptimeSec) : '—'}</td></tr>
-              <tr><td className="muted">Listening on</td><td className="num">port {n.p2pPort}</td></tr>
+              <tr>
+              <td className="muted">Listening on</td>
+              <td className="num">
+                port {n.p2pPort}
+                {n.p2pMoved ? <span className="dim"> (moved from {n.p2pMoved.wanted})</span> : null}
+              </td>
+            </tr>
             </tbody>
           </table>
           <p className="tiny dim" style={{ marginTop: 10, marginBottom: 0 }}>
