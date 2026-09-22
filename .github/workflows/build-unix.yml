@@ -47,6 +47,7 @@ jobs:
             miner_asset: privacy-miner-linux-x64
             node_sha: 17c5297c4f4fda72982f1d6c2e4f4682ea434390e87639108eaa0f9912948ffe
             miner_sha: 740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6
+            expect: 'x86_64|amd64'
           - key: darwin-arm64
             runs-on: macos-14
             builder: --mac --arm64
@@ -54,6 +55,7 @@ jobs:
             miner_asset: privacy-miner-darwin-arm64
             node_sha: 102b6ec3e6c8bee6ffcbce3c595ff31149ddf8b389aaed4ce065e76eee32ef38
             miner_sha: b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a
+            expect: 'mac-arm64'
           - key: darwin-x64
             runs-on: macos-13
             builder: --mac --x64
@@ -61,6 +63,7 @@ jobs:
             miner_asset: privacy-miner-darwin-x64
             node_sha: PENDING
             miner_sha: PENDING
+            expect: 'mac-x64'
 
     name: ${{ matrix.key }}
     runs-on: ${{ matrix.runs-on }}
@@ -221,6 +224,19 @@ jobs:
           # then appear on the release looking like things to install.
           shopt -s nullglob
           for f in release/*.AppImage release/*.deb release/*.dmg release/*.zip; do
+            # THE ARCHITECTURE MUST MATCH THE BINARIES THIS JOB STAGED.
+            #
+            # Listing both Apple architectures in package.json made
+            # electron-builder build BOTH on the arm64 runner, so a file named
+            # "mac-x64" was produced carrying arm64 node and miner binaries -
+            # a package that cannot run on the machine its name promises. It
+            # reached the draft before I noticed. Now a file that does not
+            # carry this job's architecture fails the build instead.
+            base=$(basename "$f")
+            if ! echo "$base" | grep -Eq '${{ matrix.expect }}'; then
+              echo "REFUSING $base: this job staged ${{ matrix.key }} binaries, and that name does not match"
+              exit 1
+            fi
             cp "$f" out/
           done
           shopt -u nullglob
