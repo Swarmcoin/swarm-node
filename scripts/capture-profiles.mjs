@@ -32,6 +32,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from './ws-min.mjs';
 import { startShots } from './cdp-shot.mjs';
+import { stopApp } from './stop-app.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
@@ -216,12 +217,13 @@ async function withProfile(name, seed, walk) {
     await walk({ step, click, tab, evaluate, waitFor, sleep });
     await shots.stop();
   } finally {
+    // Ask the app to close first, so the node it started is stopped by the
+    // product's own shutdown rather than orphaned. See stop-app.mjs.
+    await stopApp(child, cdp, dataDir);
     try { cdp?.close?.(); } catch { /* closing a dead socket is fine */ }
-    kill(child);
-    // Electron takes a moment to release its debugging port and its child
-    // processes. Starting the next profile too soon left the next launch with
-    // no debuggable page at all.
-    await sleep(6000);
+    // Electron takes a moment to release its debugging port. Starting the
+    // next profile too soon left the next launch with no debuggable page.
+    await sleep(4000);
     for (let i = 0; i < 4; i += 1) {
       try { fs.rmSync(dataDir, { recursive: true, force: true }); break; } catch { await sleep(1200); }
     }

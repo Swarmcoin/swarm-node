@@ -37,6 +37,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from './ws-min.mjs';
 import { startShots } from './cdp-shot.mjs';
+import { stopApp } from './stop-app.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
@@ -83,11 +84,10 @@ let cleanedUp = false;
 async function cleanup(code) {
   if (cleanedUp) return;
   cleanedUp = true;
-  try {
-    if (process.platform === 'win32' && child.pid) execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-    else child.kill();
-  } catch { /* already gone */ }
-  await sleep(3000);
+  // Ask the app to close first. Force-killing it ends the Electron tree but
+  // NOT the node and miner, which run in detached consoles so that a real
+  // Ctrl-C can reach them - a run once left four of them mining afterwards.
+  await stopApp(child, cdp, dataDir);
   for (let i = 0; i < 5; i += 1) {
     try { fs.rmSync(dataDir, { recursive: true, force: true }); break; }
     catch { await sleep(1500); }

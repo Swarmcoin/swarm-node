@@ -41,6 +41,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from './ws-min.mjs';
 import { startShots } from './cdp-shot.mjs';
+import { stopApp } from './stop-app.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
@@ -333,6 +334,8 @@ async function runProfile(profile, port) {
 
     if (!mounted) await bail(null);
   } finally {
+    // The node and miner are not in the app's process tree; see stop-app.mjs.
+    await stopApp(child, cdp, dataDir);
     try { cdp?.close?.(); } catch { /* closing a dead socket is fine */ }
     killTree(child);
     running.delete(child);
