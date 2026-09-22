@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -35,7 +36,24 @@ import { startShots } from './cdp-shot.mjs';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unpacked = process.argv[2] || path.join(ROOT, 'release', 'win-unpacked');
 const outDir = process.argv[3] || 'C:/Users/o5o-o/swarm-work/ws-e/_review/packaged-profiles';
-const PORT = Number(process.env.SWARM_CDP_PORT) || 9355;
+/**
+ * A port nothing is using, asked for at the moment it is needed.
+ *
+ * Fixed offsets are a guess about the rest of the machine, and the guess was
+ * wrong: the second profile died with "bind() returned an error ... Only one
+ * usage of each socket address", which the app reports as no debuggable page
+ * at all. Ask the operating system instead.
+ */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 const exe = process.platform === 'win32'
   ? path.join(unpacked, 'SWARM Node.exe')
@@ -91,10 +109,10 @@ function kill(child) {
  * Run the packaged app against a seeded profile and let `walk` drive it.
  * @param {string} name      profile name, used in file names
  * @param {object|null} seed settings.json to write before launching
- * @param {number} port      debugging port for this launch
  * @param {function} walk    async (tools) => void
  */
-async function withProfile(name, seed, port, walk) {
+async function withProfile(name, seed, walk) {
+  const port = await freePort();
   console.log(`\n=== profile "${name}" ===`);
   const dataDir = path.join(os.tmpdir(), `swarm-node-shots-${name}-${Date.now()}`);
   fs.mkdirSync(dataDir, { recursive: true });
@@ -119,7 +137,13 @@ async function withProfile(name, seed, port, walk) {
       } catch { /* not up yet */ }
       if (!page) await sleep(500);
     }
-    if (!page) throw new Error('the app never opened a debuggable page');
+    if (!page) {
+      // Say WHY, rather than leaving a bare "never opened". The app prints its
+      // data folder and any start-up refusal to stdout.
+      console.error(`  --- the app's own output, profile "${name}" ---`);
+      for (const l of appOut.join('').split('\n').filter(Boolean).slice(-20)) console.error(`    ${l}`);
+      throw new Error(`the app never opened a debuggable page on port ${port}`);
+    }
 
     cdp = new WebSocket(page.webSocketDebuggerUrl);
     await cdp.open(15000);
@@ -193,7 +217,10 @@ async function withProfile(name, seed, port, walk) {
   } finally {
     try { cdp?.close?.(); } catch { /* closing a dead socket is fine */ }
     kill(child);
-    await sleep(2500);
+    // Electron takes a moment to release its debugging port and its child
+    // processes. Starting the next profile too soon left the next launch with
+    // no debuggable page at all.
+    await sleep(6000);
     for (let i = 0; i < 4; i += 1) {
       try { fs.rmSync(dataDir, { recursive: true, force: true }); break; } catch { await sleep(1200); }
     }
@@ -205,14 +232,14 @@ console.log(`out : ${outDir}`);
 
 try {
   // ---- stray: the wizard must still run -------------------------------
-  await withProfile('stray', STRAY, PORT, async ({ step, waitFor }) => {
+  await withProfile('stray', STRAY, async ({ step, waitFor }) => {
     const wizard = await waitFor('/Run a piece of the swarm/i', 30000, 'the welcome screen');
     if (!wizard) problems.push('profile "stray": the first-run wizard did NOT appear');
     await step('wizard-runs-despite-leftover-consent-and-address');
   });
 
   // ---- done: setup finished, node stopped ------------------------------
-  await withProfile('done', DONE, PORT + 1, async ({ step, click, tab, evaluate, waitFor, sleep: nap }) => {
+  await withProfile('done', DONE, async ({ step, click, tab, evaluate, waitFor, sleep: nap }) => {
     await waitFor('/This machine/i', 30000, 'the dashboard');
     await step('mining-node-stopped-primary-button-enabled');
 
@@ -243,7 +270,7 @@ try {
   });
 
   // ---- done, node never started: the address is accepted, not blamed ---
-  await withProfile('address', { ...DONE, payoutAddress: '', payoutKind: null, payoutDetail: '' }, PORT + 2,
+  await withProfile('address', { ...DONE, payoutAddress: '', payoutKind: null, payoutDetail: '' },
     async ({ step, tab, evaluate, waitFor, sleep: nap }) => {
       await waitFor('/This machine/i', 30000, 'the dashboard');
       await tab('settings');
