@@ -325,13 +325,21 @@ try {
     return b ? (b.innerText || '').replace(/\s+/g, ' ').trim() : '';
   })()`).catch(() => '');
 
-  // While it is still catching up, arm it: this is the path most people take.
-  if (/when ready/i.test(await buttonLabel())) {
-    await step('mining-armable-while-catching-up');
-    if (await click('start mining when ready')) {
-      await sleep(1500);
-      await step('mining-armed-will-start-by-itself');
-    }
+  // N-9: ONE PRESS. The button says "Start mining" from the first moment,
+  // whatever the node is doing, and pressing it once is the whole path.
+  const before = await buttonLabel();
+  console.log(`  the button reads: ${JSON.stringify(before)}`);
+  if (!/Start mining/i.test(before)) {
+    console.error(`  the Mining page must offer "Start mining", not ${JSON.stringify(before)}`);
+    duplicates.push(`the primary button read ${JSON.stringify(before)} instead of "Start mining"`);
+  }
+  await step('mining-one-button-before-the-press');
+  if (await click('start mining')) {
+    await sleep(2500);
+    await step('mining-after-the-single-press');
+    console.log(`  after one press it reads: ${JSON.stringify(await buttonLabel())}`);
+  } else {
+    duplicates.push('the one button could not be pressed');
   }
 
   const gateBy = Date.now() + 300000;
@@ -342,8 +350,11 @@ try {
   }
   console.log(`  primary button now reads: ${JSON.stringify(label)}`);
 
-  // Armed runs start on their own; only press if it did not.
-  if (/Stop mining/i.test(label) || (await click('start mining'))) {
+  // One press was the whole path: mining must arrive on its own.
+  if (!/Stop mining/i.test(label)) {
+    duplicates.push(`mining needed a second press: the button read ${JSON.stringify(label)}`);
+  }
+  if (/Stop mining/i.test(label)) {
     const started = await waitFor('/Stop mining/i', 60000, 'mining to start');
     console.log(`  mining started: ${started}`);
     await sleep(5000);
