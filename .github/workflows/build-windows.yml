@@ -270,7 +270,34 @@ jobs:
       #
       # It is also exactly the shape the planner asked for: publishing after
       # the audit is one command, `gh release edit <tag> --draft=false`.
+      # A DRAFT IS FROZEN ONCE SOMEBODY HAS VERIFIED IT.
+      #
+      # This used to run on every push to main, so a later commit silently
+      # replaced the assets of build-0.2.0-testnet.2 after the planner had
+      # verified and staged that exact package for the owner. The hashes they
+      # had checked no longer matched what the tag held.
+      #
+      # It now runs only when the run was started by hand, or when the version
+      # in package.json is not one that already has a draft. Everything else
+      # still builds, tests and packages — it just does not touch a release.
+      - name: Should this run touch a release?
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "build-$version"
+          $manual = '${{ github.event_name }}' -eq 'workflow_dispatch'
+          $exists = $null -ne (gh release view $tag -R ${{ github.repository }} --json tagName 2>$null)
+          $touch = $manual -or (-not $exists)
+          if ($exists -and -not $manual) {
+            Write-Host "::notice::$tag already exists and this run was not started by hand, so its assets are left alone. Bump the version for a new draft, or dispatch the workflow to replace this one."
+          }
+          "touch=$($touch.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Put the build on a draft release
+        if: steps.gate.outputs.touch == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
