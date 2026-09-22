@@ -9,6 +9,7 @@ import { Mark, Icon, Pill } from './ui.jsx';
 import { Welcome, Consent, Payout, MachineCheck } from './setup.jsx';
 import { MiningView, NodeView, RewardsView, SettingsView, LogView } from './dashboard.jsx';
 import { MapView } from './map.jsx';
+import { Tour } from './tour.jsx';
 
 const TABS = [
   ['mining', 'Mining', 'mine'],
@@ -44,6 +45,7 @@ export default function App() {
   const [screen, setScreen] = useState('loading');
   const [tab, setTab] = useState('mining');
   const [lines, setLines] = useState([]);
+  const [tour, setTour] = useState(false);
   const stopping = useRef(false);
 
   // ---- bridge ----
@@ -58,6 +60,7 @@ export default function App() {
     // rather than by the page, so the page never has to know about tabs.
     goToPayout: () => setTab('settings'),
     goToTab: (t) => setTab(t),
+    showTour: () => setTour(true),
     setMiningMode: (m) => window.engine.setMiningMode(m),
     setIntensity: (n) => window.engine.setIntensity(n),
     setIdleOnly: (v) => window.engine.setIdleOnly(v),
@@ -163,9 +166,13 @@ export default function App() {
                 onNext={async () => {
                   // The end of the wizard, and the only thing that records it.
                   await window.shell.completeSetup();
-                  setCfg(await window.shell.getConfig());
+                  const next = await window.shell.getConfig();
+                  setCfg(next);
                   setScreen('dashboard');
                   setTab('mining');
+                  // Straight into the guided tour, unless this build already
+                  // showed it to this user.
+                  if (!next.tourSeen) setTour(true);
                 }}
               />
             ) : null}
@@ -235,6 +242,25 @@ export default function App() {
           {tab === 'settings' ? <SettingsView s={state} cfg={cfg} api={api} /> : null}
           {tab === 'log' ? <LogView lines={lines} /> : null}
         </div>
+
+        {/* The guided tour. It moves the app to the page it is describing and
+            never covers it; Escape or Skip leaves at any point. */}
+        {tour ? (
+          <Tour
+            s={state}
+            cfg={cfg}
+            onTab={setTab}
+            onClose={async (finished) => {
+              setTour(false);
+              // Only finishing marks it seen. Skipping leaves it on offer, and
+              // it is replayable from Settings either way.
+              if (finished) {
+                await window.shell.setTourSeen(true);
+                setCfg(await window.shell.getConfig());
+              }
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

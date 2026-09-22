@@ -1,7 +1,7 @@
 {
   "_comment": "SHA-256 of the binaries each platform is allowed to run, and where each came from. Written by scripts/make-binaries-manifest.mjs. The node and the miner come from DIFFERENT upstream trees; see PROVENANCE.md beside this file.",
   "_note": "The node is v6.3.0; the miner is built from a tree 333 commits later. The miner is an RPC client: the node validates every block it accepts, so the node decides. Recorded, not smoothed over.",
-  "generated_at": "2026-09-22T12:48:02.107Z",
+  "generated_at": "2026-09-22T13:05:36.364Z",
   "platforms": {
     "win32-x64": {
       "zebrad": {

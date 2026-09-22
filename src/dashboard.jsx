@@ -185,6 +185,21 @@ export function MiningView({ s, api }) {
           >Shielded · 1 core</button>
         </div>
 
+        {/* A greyed-out choice with no explanation is the same dead end as a
+            greyed-out Start button. Whichever engine is unavailable, say why
+            in one line and say what would change it. */}
+        <div className="tiny dim" style={{ marginTop: 8 }}>
+          {s.payout.kind === 'transparent'
+            ? <>Your address is a transparent <span className="mono">tm…</span> one, so Standard is
+              available and Shielded is not. Shielded needs a unified{' '}
+              <span className="mono">utest…</span> address — paste one in Settings to use it.</>
+            : s.payout.kind === 'unified'
+              ? <>Your address is a unified <span className="mono">utest…</span> one, so Shielded is
+                available and Standard is not. Standard pays a transparent{' '}
+                <span className="mono">tm…</span> address — paste one in Settings to use it.</>
+              : <>Neither engine is available until you paste a payout address in Settings.</>}
+        </div>
+
         {!m.standardAvailable ? (
           <div style={{ marginTop: 12 }}>
             <Notice kind="plain">
@@ -475,6 +490,20 @@ export function SettingsView({ s, cfg, api }) {
 
   return (
     <div className="stack-lg">
+      <div className="card">
+        <div className="row">
+          <div>
+            <h3>New here?</h3>
+            <p className="small muted" style={{ marginBottom: 0 }}>
+              Five short steps through the five pages of this app. It changes nothing and you can
+              leave at any point.
+            </p>
+          </div>
+          <div className="spacer" />
+          <button className="btn sm" onClick={() => api.showTour()}>Show me around</button>
+        </div>
+      </div>
+
       <div className="card">
         <h3>Payout address</h3>
         <p className="small muted">The only thing this app stores about you. Change it any time; the node restarts to pick it up.</p>

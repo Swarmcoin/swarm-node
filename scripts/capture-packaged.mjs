@@ -264,6 +264,26 @@ try {
 
   await click('go to my node');
   await waitFor('/This machine/i', 20000, 'the dashboard');
+
+  // The guided tour starts by itself at the end of the wizard, so this is
+  // where a new user meets it. Five steps, each moving the app to the page it
+  // describes; photograph every one of them.
+  const inTour = await waitFor('/Step 1 of 5/i', 15000, 'the guided tour to open');
+  console.log(`  guided tour opened by itself: ${inTour}`);
+  if (inTour) {
+    for (let i = 1; i <= 5; i += 1) {
+      await sleep(900);
+      await step(`tour-step-${i}-of-5`);
+      if (i < 5) {
+        if (!(await click('next'))) { console.log('  (the tour has no Next button)'); break; }
+        await waitFor(`/Step ${i + 1} of 5/i`, 10000, `tour step ${i + 1}`);
+      }
+    }
+    if (await click('start using swarm node')) console.log('  finished the tour');
+    await sleep(1200);
+    // The tour leaves the app on the last page it described.
+    await tab('mining');
+  }
   await step('mining-before-start');
 
   // A REAL height in the gate line, not a dash.
