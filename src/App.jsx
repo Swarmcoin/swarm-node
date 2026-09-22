@@ -37,6 +37,7 @@ export default function App() {
     setIntensity: (n) => window.engine.setIntensity(n),
     setIdleOnly: (v) => window.engine.setIdleOnly(v),
     setPayoutAddress: (a) => window.engine.setPayoutAddress(a),
+    inspectAddress: (a) => window.engine.inspectAddress(a),
     setUserOverride: (on) => window.engine.setUserOverride(on),
     setFirstNodeOverride: async (on, phrase) => {
       const r = await window.engine.setFirstNodeOverride(on, phrase);
@@ -65,6 +66,16 @@ export default function App() {
       setCfg(c);
       setState(s);
       setLines(l || []);
+      // Review hook: #shot=<screen> puts one screen on top so the capture
+      // tool can photograph each in turn. It changes nothing else — the data
+      // on the screen is whatever the engine really reports.
+      const shot = /(?:^|#|&)shot=([a-z:]+)/.exec(window.location.hash || '');
+      if (shot) {
+        const [scr, tb] = shot[1].split(':');
+        setScreen(scr);
+        if (tb) setTab(tb);
+        return;
+      }
       setScreen(c.consented ? (c.payoutAddress ? 'dashboard' : 'payout') : 'welcome');
     })();
 
@@ -185,7 +196,7 @@ export default function App() {
 
         <div className="content">
           {tab === 'mining' ? <MiningView s={state} api={api} /> : null}
-          {tab === 'node' ? <NodeView s={state} api={api} /> : null}
+          {tab === 'node' ? <NodeView s={state} api={api} cfg={cfg} /> : null}
           {tab === 'rewards' ? <RewardsView s={state} /> : null}
           {tab === 'map' ? <MapView cfg={cfg} reducedMotion={!!cfg.reducedMotion} /> : null}
           {tab === 'settings' ? <SettingsView s={state} cfg={cfg} api={api} /> : null}

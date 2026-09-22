@@ -35,14 +35,21 @@ for (const f of jsFiles) {
     failures.push(`syntax error in ${path.relative(ROOT, f)}:\n${(e.stderr || '').toString().slice(0, 600)}`);
   }
 }
-// .jsx cannot go through node --check; a balanced-token sanity check catches
-// the common truncation mistakes and the real check is the vite build.
+// .jsx cannot go through `node --check`, so it goes through esbuild, which
+// vite already brings in. The previous approach counted braces, which cannot
+// tell a brace in a string from a brace in code: it declared src/map.jsx
+// "unbalanced (102 vs 103)" while the file parsed and built perfectly.
+const esbuild = await import('esbuild').catch(() => null);
 for (const f of jsxFiles) {
-  const t = sourceText.get(f);
-  for (const [open, close, name] of [['{', '}', 'braces'], ['(', ')', 'parentheses'], ['[', ']', 'brackets']]) {
-    const a = (t.match(new RegExp(`\\${open}`, 'g')) || []).length;
-    const b = (t.match(new RegExp(`\\${close}`, 'g')) || []).length;
-    if (a !== b) failures.push(`${path.relative(ROOT, f)}: unbalanced ${name} (${a} vs ${b})`);
+  const rel = path.relative(ROOT, f);
+  if (!esbuild) { notes.push(`esbuild unavailable, so ${rel} was not syntax-checked`); continue; }
+  try {
+    esbuild.transformSync(sourceText.get(f), { loader: 'jsx', sourcefile: rel });
+  } catch (e) {
+    const where = (e.errors || [])
+      .map((x) => `${x.text}${x.location ? ` at line ${x.location.line}` : ''}`)
+      .join('; ');
+    failures.push(`syntax error in ${rel}: ${where || e.message}`);
   }
 }
 

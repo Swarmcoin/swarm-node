@@ -4,7 +4,7 @@
 // exactly what will run on this machine, in plain words, and the user ticks
 // each item. Nothing starts before it is accepted.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Mark, Icon, Notice, fmtBytes } from './ui.jsx';
 
 function Steps({ index }) {
@@ -111,32 +111,70 @@ export function Consent({ onAccept, onBack }) {
 
 /**
  * The payout step. It replaces the entire account system: there is nothing to
- * create, nothing to remember and nothing to lose. The address is checked by
- * asking the local node, so this app contains no address-parsing code.
+ * create, nothing to remember and nothing to lose.
+ *
+ * Defect N-3: this used to show a spinner ("checking with your node") and a red
+ * error ("the node is not answering yet") at the same time, with Continue
+ * greyed out and nothing the person could do. Three rules now:
+ *
+ *   1. ONE state at a time. The screen shows exactly one of: nothing typed,
+ *      the format is wrong, the format is right and the node has not confirmed
+ *      yet, the node confirmed, the node refused.
+ *   2. The format is judged OFFLINE and INSTANTLY, so Continue is available as
+ *      soon as a plausible address is pasted. The node's verdict is a
+ *      confirmation that arrives afterwards, not a gate on typing.
+ *   3. The node check runs BY ITSELF as soon as the node is up, and keeps
+ *      trying. No button to mash. If the node is not running, the step says so
+ *      once and offers to start it.
  */
 export function Payout({ state, onBack, onNext, api }) {
   const [value, setValue] = useState(state?.payout?.address || '');
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);
-  const nodeRunning = state?.node?.running;
+  const [format, setFormat] = useState(null);      // offline verdict
+  const [confirmed, setConfirmed] = useState(null); // the node's verdict
+  const [checking, setChecking] = useState(false);
+  const [startingNode, setStartingNode] = useState(false);
+  const nodeRunning = !!state?.node?.running;
+  const asked = useRef('');
 
+  // Offline look, on every keystroke.
   useEffect(() => {
-    if (!nodeRunning) api.startNode();
-  }, [nodeRunning]);
+    let live = true;
+    if (!value.trim()) { setFormat(null); setConfirmed(null); return undefined; }
+    api.inspectAddress(value.trim()).then((r) => { if (live) setFormat(r); });
+    setConfirmed(null);
+    asked.current = '';
+    return () => { live = false; };
+  }, [value]);
 
-  async function check() {
-    setBusy(true);
-    setResult(null);
-    const r = await api.setPayoutAddress(value.trim());
-    setResult(r);
-    setBusy(false);
-  }
+  // Ask the node by itself, once it is up and the format is plausible. Retries
+  // on its own: the node takes a few seconds to answer after it starts.
+  useEffect(() => {
+    const addr = value.trim();
+    if (!format?.looksValid || !nodeRunning || confirmed?.ok) return undefined;
+    if (asked.current === addr && checking) return undefined;
+    let live = true;
+    const run = async () => {
+      asked.current = addr;
+      setChecking(true);
+      const r = await api.setPayoutAddress(addr);
+      if (!live) return;
+      setChecking(false);
+      // A node that is not answering yet is not a verdict; try again shortly.
+      if (!r.ok && /not answering yet/i.test(r.error || '')) { asked.current = ''; return; }
+      setConfirmed(r);
+    };
+    const t = setTimeout(run, 400);
+    return () => { live = false; clearTimeout(t); };
+  }, [format, nodeRunning, value, confirmed]);
 
-  const kindLabel = result?.kind === 'transparent'
-    ? 'Transparent address — standard mining, all CPU cores'
-    : result?.kind === 'unified'
-      ? 'Unified address — shielded mining, one core'
-      : null;
+  // Keep retrying while the node comes up.
+  useEffect(() => {
+    if (!format?.looksValid || confirmed || !nodeRunning) return undefined;
+    const iv = setInterval(() => { if (!checking && !confirmed) asked.current = ''; }, 4000);
+    return () => clearInterval(iv);
+  }, [format, confirmed, nodeRunning, checking]);
+
+  const canContinue = !!format?.looksValid;
 
   return (
     <div className="setup">
@@ -168,35 +206,58 @@ export function Payout({ state, onBack, onNext, api }) {
           <button className="btn sm ghost" onClick={() => window.shell.openWallet()}>
             <span className="row" style={{ gap: 6 }}><Icon name="wallet" size={15} /> Open SWARM Wallet</span>
           </button>
-          <div className="spacer" />
-          <button className="btn primary sm" disabled={!value.trim() || busy} onClick={check}>
-            {busy ? 'Asking the node…' : 'Check this address'}
-          </button>
         </div>
 
-        {!nodeRunning ? (
-          <div style={{ marginTop: 14 }}>
-            <Notice kind="info">
-              <span className="spinner" />
-              <span>Starting your node — the address is checked by the node itself, so it has to be running first.</span>
-            </Notice>
-          </div>
-        ) : null}
-
-        {result && result.ok ? (
-          <div style={{ marginTop: 14 }}>
-            <Notice kind="ok"><div><b>{kindLabel}</b><div className="small">{result.detail}</div></div></Notice>
-          </div>
-        ) : null}
-        {result && !result.ok ? (
-          <div style={{ marginTop: 14 }}><Notice kind="bad">{result.error}</Notice></div>
-        ) : null}
+        {/* EXACTLY ONE of the following is ever on screen. */}
+        <div style={{ marginTop: 14 }}>
+          {!value.trim() ? null
+            : !format ? null
+            : !format.looksValid ? (
+              <Notice kind="bad">{format.hint}</Notice>
+            ) : confirmed && confirmed.ok ? (
+              <Notice kind="ok">
+                <div>
+                  <b>{format.label} — checked by your node ✓</b>
+                  <div className="small">{confirmed.detail || format.detail}</div>
+                </div>
+              </Notice>
+            ) : confirmed && !confirmed.ok ? (
+              <Notice kind="bad">
+                <div>
+                  <b>Your node does not recognise that address.</b>
+                  <div className="small">{confirmed.error}</div>
+                </div>
+              </Notice>
+            ) : !nodeRunning ? (
+              <Notice kind="info">
+                <div style={{ width: '100%' }}>
+                  <b>{format.label}. Looks right.</b>
+                  <div className="small" style={{ marginTop: 4 }}>
+                    {format.detail} Your node is not running, so it has not double-checked this
+                    address yet. You can continue now and it will check by itself, or start the
+                    node here.
+                  </div>
+                  <button
+                    className="btn sm"
+                    style={{ marginTop: 10 }}
+                    disabled={startingNode}
+                    onClick={async () => { setStartingNode(true); await api.startNode(); setStartingNode(false); }}
+                  >{startingNode ? 'Starting…' : 'Start node'}</button>
+                </div>
+              </Notice>
+            ) : (
+              <Notice kind="info">
+                <span className="spinner" />
+                <span><b>{format.label}. Looks right.</b> Waiting for your node to double-check it…</span>
+              </Notice>
+            )}
+        </div>
       </div>
 
       <div className="row" style={{ marginTop: 24 }}>
         <button className="btn ghost" onClick={onBack}>Back</button>
         <div className="spacer" />
-        <button className="btn primary" disabled={!(result && result.ok)} onClick={onNext}>Continue</button>
+        <button className="btn primary" disabled={!canContinue} onClick={onNext}>Continue</button>
       </div>
     </div>
   );

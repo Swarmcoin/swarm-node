@@ -180,6 +180,9 @@ class ChainEngine extends EventEmitter {
 
     fs.mkdirSync(this.dataDir, { recursive: true });
     this.node = new ZebraNode({ binaryPath: bin.path, dataDir: this.dataDir, manifest: this.manifest });
+    // Rewrite or drop the node's more alarming lines before they reach the
+    // log the user reads. See translateNodeLine.
+    this.node.translate = (line) => this.translateNodeLine(line);
     this.node.on('log', (e) => this.emit('log', e));
     this.node.on('line', (line) => this.onNodeLine(line));
     this.node.on('exit', (info) => {
@@ -338,6 +341,33 @@ class ChainEngine extends EventEmitter {
     this.log(`restarting the node: ${why}`);
     await this.stopNode();
     return this.startNode();
+  }
+
+  /**
+   * Zebra says some frightening things that are not problems.
+   *
+   * The owner read "initial sync is very slow, or estimated tip is wrong" in
+   * the console and asked about it. On this network it is meaningless: Zebra
+   * derives that warning from its wall-clock tip estimate, which a young chain
+   * always contradicts (see the note in sync-gate.js). Lines like it are
+   * rewritten into something true, or dropped, before they reach the log the
+   * user reads. Nothing is invented and nothing that matters is hidden: the
+   * node's own log files keep every original line.
+   */
+  translateNodeLine(line) {
+    const t = String(line);
+    if (/initial sync is very slow|estimated tip is wrong/.test(t)) {
+      return {
+        kind: 'app',
+        text: 'Note: the node reports it is behind a time-based estimate of the chain height. ' +
+              'On a young network that estimate is wrong more often than the node is, so SWARM Node ' +
+              'compares your height with the SWARM wallet server instead. Nothing is wrong here.'
+      };
+    }
+    if (/below the highest checkpoint/.test(t)) return null;      // meaningless without checkpoints
+    if (/assuming the open file limit is high enough/.test(t)) return null;
+    if (/Thank you for running a/.test(t)) return null;
+    return undefined;   // pass through unchanged
   }
 
   onNodeLine(line) {
@@ -778,6 +808,7 @@ class ChainEngine extends EventEmitter {
         standardAvailable: this.standardMiningAvailable(),
         standardSimulated: this.simulateStandardMiner,
         workers: this.pool ? this.pool.workerCount : 0,
+        pids: this.pool ? this.pool.workers.map((w) => w.pid).filter(Boolean) : [],
         intensity: this.effectiveWorkerCount(),
         maxWorkers: Math.max(1, (require('os').cpus().length || 2) - 1),
         pausedByGate: this.mining.pausedByGate,

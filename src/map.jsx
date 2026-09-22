@@ -13,11 +13,32 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Notice } from './ui.jsx';
 
-// These attach window.topojson and window.SwarmGeo. Bundled locally: the app
-// loads nothing from a CDN.
-import './assets/map/topojson-client.min.js';
-import './assets/map/geo-natural-earth1.js';
+// The geometry is imported; the two vendor scripts are NOT.
+//
+// Both are plain browser scripts that end in `})(this)` and hang themselves off
+// the global object. Bundled as ES modules, `this` is undefined at the top
+// level and they throw "Cannot set properties of undefined". They are therefore
+// served as static files from the app's own folder and loaded with a script
+// element, exactly as the website loads them — same-origin, allowed by
+// script-src 'self', and no CDN anywhere.
 import worldTopology from './assets/map/world-110m.json';
+
+const VENDOR = ['./map/topojson-client.min.js', './map/geo-natural-earth1.js'];
+
+/** Load the two vendor scripts once, lazily, when the map is first opened. */
+let vendorPromise = null;
+function loadVendor() {
+  if (window.topojson && window.SwarmGeo) return Promise.resolve(true);
+  if (vendorPromise) return vendorPromise;
+  vendorPromise = Promise.all(VENDOR.map((src) => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('could not load ' + src));
+    document.head.appendChild(s);
+  }))).then(() => !!(window.topojson && window.SwarmGeo));
+  return vendorPromise;
+}
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const W = 960;
@@ -194,9 +215,12 @@ export function MapView({ cfg, reducedMotion }) {
   useEffect(() => { load(false); }, []);
 
   useEffect(() => {
-    if (state && state.data && plotRef.current) {
-      draw(plotRef.current, state.data.nodes, reducedMotion);
-    }
+    if (!state || !state.data || !plotRef.current) return;
+    let live = true;
+    loadVendor()
+      .then((ready) => { if (live && ready && plotRef.current) draw(plotRef.current, state.data.nodes, reducedMotion); })
+      .catch(() => { /* the table below is still the answer */ });
+    return () => { live = false; };
   }, [state, reducedMotion]);
 
   const nodes = state && state.data ? state.data.nodes : [];

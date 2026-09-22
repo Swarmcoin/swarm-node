@@ -92,7 +92,7 @@ export function MiningView({ s, api }) {
           </div>
         </Notice>
       ) : null}
-      {g.overridden ? (
+      {g.overridden && g.firstNode ? (
         <Notice kind="warn"><div><b>First-node mode is on.</b><div>{g.message}</div></div></Notice>
       ) : null}
       {m.pausedByGate && !m.on ? (
@@ -216,7 +216,7 @@ export function MiningView({ s, api }) {
 }
 
 // ---------------------------------------------------------------- node
-export function NodeView({ s, api }) {
+export function NodeView({ s, api, cfg }) {
   const [busy, setBusy] = useState(false);
   const n = s.node;
 
@@ -286,6 +286,31 @@ export function NodeView({ s, api }) {
         <div className="card">
           <h3>Where the chain lives</h3>
           <div className="addr" style={{ marginTop: 8 }}>{n.dataDir}</div>
+          {/* The owner has to be able to see, at a glance, which folder and
+              which processes this window is actually using — there may be more
+              than one copy of the app on the machine. */}
+          <table className="tbl" style={{ marginTop: 12 }}>
+            <tbody>
+              <tr>
+                <td className="muted">Node process</td>
+                <td className="num">{n.running ? `running, PID ${n.pid}` : 'not running'}</td>
+              </tr>
+              <tr>
+                <td className="muted">Miner processes</td>
+                <td className="num">
+                  {s.mining.mode === 'shielded'
+                    ? (s.mining.on ? 'inside the node (one thread)' : 'none')
+                    : (s.mining.pids && s.mining.pids.length
+                        ? s.mining.pids.map((p) => `PID ${p}`).join(', ')
+                        : 'none')}
+                </td>
+              </tr>
+              <tr>
+                <td className="muted">Settings file</td>
+                <td className="num" style={{ fontSize: 11, wordBreak: 'break-all' }}>{cfg?.userDataDir || '—'}</td>
+              </tr>
+            </tbody>
+          </table>
           <div className="row" style={{ marginTop: 14 }}>
             <button className="btn sm" onClick={() => window.shell.openDataFolder()}>
               <span className="row" style={{ gap: 6 }}><Icon name="folder" size={15} /> Open folder</span>

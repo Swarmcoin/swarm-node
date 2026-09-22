@@ -175,6 +175,14 @@ jobs:
       - name: String sweep (packaged app.asar)
         run: node scripts/string-sweep.mjs release/win-unpacked/resources/app.asar
 
+      # And does the packaged app actually SHOW anything? 0.2.0-testnet.1 passed
+      # every other gate and then opened a blank window, because one module in
+      # the bundle threw at load and React never mounted. This launches the real
+      # packaged app and fails unless something is on the page.
+      - name: Renderer smoke test (packaged app must not open blank)
+        run: node scripts/smoke-renderer.mjs release/win-unpacked
+        timeout-minutes: 6
+
       - name: Checksums and release manifest
         shell: pwsh
         run: |

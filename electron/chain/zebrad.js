@@ -100,7 +100,17 @@ class ZebraNode extends EventEmitter {
     this.pid = child.pid;
     this.startedAt = Date.now();
 
-    child.on('line', (line) => { this.pushLog(line, 'node'); this.emit('line', line); });
+    child.on('line', (line) => {
+      // The engine gets every raw line, for the miner's own announcements.
+      this.emit('line', line);
+      // The log the user reads gets a translated one, or none. Zebra says some
+      // frightening things that are not problems on this network; the raw text
+      // stays in the node's own log files either way.
+      const t = typeof this.translate === 'function' ? this.translate(line) : undefined;
+      if (t === null) return;
+      if (t && typeof t === 'object') this.pushLog(t.text, t.kind || 'app');
+      else this.pushLog(line, 'node');
+    });
     child.on('error', (e) => this.pushLog(`node reported: ${e.message}`, 'app'));
     child.on('exit', ({ code, signal }) => {
       this.exitInfo = { code, signal, at: Date.now(), expected: this.stopping };

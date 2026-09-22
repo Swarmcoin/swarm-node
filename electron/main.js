@@ -24,6 +24,7 @@ const fs = require('fs');
 const { ChainEngine } = require('./chain/engine');
 const { SettingsStore } = require('./config-store');
 const { MapData } = require('./chain/map-data');
+const { inspect: inspectAddress } = require('./chain/address-format');
 const V = require('./ipc-validate');
 
 // ---------------------------------------------------------------- identity
@@ -32,7 +33,26 @@ const V = require('./ipc-validate');
 // can never share settings, consent or state.
 const APP_ID = 'green.swarm.node';
 app.setAppUserModelId(APP_ID);
-app.setPath('userData', path.join(app.getPath('appData'), APP_ID));
+
+// SWARM_NODE_DATA_DIR moves EVERYTHING this app stores — settings, the chain,
+// Electron's own caches — somewhere else.
+//
+// It exists because a test run must never touch the folder a real install
+// uses. A capture harness of mine wrote its test settings, a test payout
+// address and 11 MB of chain state into %APPDATA%\green.swarm.node, which is
+// exactly where a later install by the owner would have looked. Without an
+// override the only way to run the app twice is to share that folder.
+//
+// Refused in a packaged build unless SWARM_NODE_TEST_RUN is also set, so an
+// installed copy cannot be pointed somewhere unexpected by a stray variable.
+const dataDirOverride = process.env.SWARM_NODE_DATA_DIR;
+const isTestRun = process.env.SWARM_NODE_TEST_RUN === '1';
+if (dataDirOverride && (!app.isPackaged || isTestRun)) {
+  app.setPath('userData', path.resolve(dataDirOverride));
+  console.log(`[data] using the override folder ${app.getPath('userData')}`);
+} else {
+  app.setPath('userData', path.join(app.getPath('appData'), APP_ID));
+}
 
 // ---------------------------------------------------------------- network
 function loadManifest() {
@@ -86,7 +106,11 @@ function createWindow() {
     minHeight: 680,
     backgroundColor: '#0A0908',
     autoHideMenuBar: true,
-    title: 'SWARM Node',
+    // A harness window must never be mistaken for the product. The owner once
+    // found one, took it for the app and tried to mine with it.
+    title: (process.env.SWARM_NODE_SHOTS || isTestRun)
+      ? 'TEST RUN — do not use — SWARM Node harness'
+      : 'SWARM Node',
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -112,6 +136,55 @@ function createWindow() {
   win.webContents.on('render-process-gone', (_e, d) => console.error('[renderer-gone]', d.reason));
 
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+}
+
+/**
+ * REVIEW HOOK, developer builds only.
+ *
+ * With SWARM_NODE_SHOTS set to a directory, the app walks its own screens and
+ * writes a PNG of each, so a reviewer can see exactly what ships without
+ * installing it. It renders the real UI against the real engine; the only
+ * thing it does is choose which screen is on top.
+ *
+ * Refused in a packaged build, so it can never run on a user's machine, and
+ * the window it opens is titled "TEST RUN - do not use".
+ */
+const SHOT_SCREENS = [
+  ['01-welcome', 'welcome'],
+  ['02-consent', 'consent'],
+  ['03-payout', 'payout'],
+  ['04-machine-check', 'check'],
+  ['05-dashboard-mining', 'dashboard:mining'],
+  ['06-dashboard-node', 'dashboard:node'],
+  ['07-dashboard-honey', 'dashboard:rewards'],
+  ['08-dashboard-map', 'dashboard:map'],
+  ['09-dashboard-settings', 'dashboard:settings'],
+  ['10-dashboard-log', 'dashboard:log']
+];
+
+async function captureScreens(dir) {
+  if (app.isPackaged) { console.error('[shots] refused: this is a packaged build'); return; }
+  fs.mkdirSync(dir, { recursive: true });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  for (const [file, screen] of SHOT_SCREENS) {
+    await new Promise((resolve) => {
+      win.webContents.once('did-finish-load', resolve);
+      win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: `shot=${screen}` });
+    });
+    // Let the first state push land, the map fetch finish, and motion settle.
+    await wait(screen.includes('map') ? 6000 : screen.startsWith('dashboard') ? 3500 : 1800);
+    try {
+      const img = await win.webContents.capturePage();
+      const out = path.join(dir, `${file}.png`);
+      fs.writeFileSync(out, img.toPNG());
+      console.log(`[shots] ${out} ${img.getSize().width}x${img.getSize().height}`);
+    } catch (e) {
+      console.error(`[shots] ${file} failed: ${e.message}`);
+    }
+  }
+  console.log('[shots] done');
+  app.quit();
 }
 
 function send(channel, payload) {
@@ -150,6 +223,9 @@ function registerIpc() {
   handle('engine:setIntensity', (n) => engine.setIntensity(V.int(n, { min: 1, max: 256, name: 'intensity' })));
   handle('engine:setIdleOnly', (v) => engine.setIdleOnly(V.bool(v, 'idle-only')));
   handle('engine:setPayoutAddress', (addr) => engine.setPayoutAddress(V.payoutAddress(addr)));
+  // Offline, instant, and never a claim about validity - see
+  // electron/chain/address-format.js and defect N-3.
+  handle('engine:inspectAddress', (addr) => inspectAddress(V.text(addr, { max: 600, name: 'address' })));
   handle('engine:setUserOverride', (on) => engine.setUserOverride(V.bool(on, 'start anyway')));
   handle('engine:setFirstNodeOverride', (on, phrase) =>
     engine.setFirstNodeOverride(V.bool(on, 'override'), on ? V.confirmPhrase(phrase) : ''));
@@ -269,6 +345,14 @@ app.whenReady().then(() => {
 
   registerIpc();
   createWindow();
+
+  if (process.env.SWARM_NODE_SHOTS && !app.isPackaged) {
+    // Start the node so the dashboard shows real numbers rather than dashes.
+    engine.startNode().catch((e) => console.error('[shots] node start failed:', e.message));
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(() => captureScreens(process.env.SWARM_NODE_SHOTS), 20000);
+    });
+  }
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
