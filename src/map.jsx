@@ -31,11 +31,15 @@ function loadVendor() {
   if (window.topojson && window.SwarmGeo) return Promise.resolve(true);
   if (vendorPromise) return vendorPromise;
   vendorPromise = Promise.all(VENDOR.map((src) => new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('could not load ' + src));
-    document.head.appendChild(s);
+    // Not `s`: in this file `s` is the engine state snapshot, and a test scans
+    // every `s.<key>` in the renderer against what the engine really
+    // publishes. One local shadowing it would blind that check on the very
+    // page where reading a key that did not exist went unnoticed.
+    const tag = document.createElement('script');
+    tag.src = src;
+    tag.onload = resolve;
+    tag.onerror = () => reject(new Error('could not load ' + src));
+    document.head.appendChild(tag);
   }))).then(() => !!(window.topojson && window.SwarmGeo));
   return vendorPromise;
 }
@@ -245,7 +249,12 @@ export function MapView({ cfg, s, reducedMotion }) {
   // lower bound on the network and the label says so. When the seed cannot be
   // reached, the app falls back to this machine's own peer count and labels
   // THAT exactly, rather than showing one number under the other's name.
-  const localPeers = s && s.chain && Number.isFinite(s.chain.peers) ? s.chain.peers : null;
+  // s.node, not s.chain: the engine publishes the node's own figures under
+  // `node`. Reading a key that does not exist made this page say "Your node:
+  // not running" while the title bar beside it said "1 PEER", and it meant the
+  // fallback figure could never appear at all.
+  const nodeRunning = !!(s && s.node && s.node.running);
+  const localPeers = nodeRunning && Number.isFinite(s.node.peers) ? s.node.peers : null;
   const seedPeers = net && net.ok && net.data && net.data.seedPeers != null ? net.data.seedPeers : null;
   const reach = seedPeers != null && !(net && net.stale)
     ? { value: seedPeers, label: 'Seed node peers', detail: 'connections the project’s seed node reports right now' }
@@ -286,15 +295,19 @@ export function MapView({ cfg, s, reducedMotion }) {
           </div>
           <div>
             <div className="kicker">Your node</div>
-            <div className="v plain">{localPeers == null ? 'Not running' : 'Connected'}</div>
-            <div className="tiny dim">{localPeers == null ? 'start it on the Node page' : 'not on the map — listing is opt-in'}</div>
+            <div className="v plain">{nodeRunning ? 'Connected' : 'Not running'}</div>
+            <div className="tiny dim">
+              {nodeRunning
+                ? `${localPeers == null ? 'no' : localPeers} peer${localPeers === 1 ? '' : 's'} · not on the map — listing is opt-in`
+                : 'start it on the Node page'}
+            </div>
           </div>
         </div>
       </div>
 
       {/* The exact question the owner asked: "I connected my node but it's
           not showing." Answered on the page, next to the count. */}
-      {localPeers != null ? (
+      {nodeRunning ? (
         <Notice kind="plain">
           <div>
             <b>Your node is running and is not on this map. That is by design.</b>
