@@ -48,6 +48,16 @@ function nextAction(state) {
       'Mining needs somewhere to pay you. It takes one paste from the SWARM Wallet.');
   }
 
+  // A RUNNING node has looked at the stored address and does not recognise
+  // it. Mining would hand that address to the node as its payout and the node
+  // would refuse to start, so the next useful thing is to replace it. This is
+  // never reached because the node could not be asked - only because it was
+  // asked and said no.
+  if (p.rejected === true) {
+    return act('set-address', 'Replace your payout address', 'primary',
+      'Your node does not recognise the address saved here, so nothing could be paid to it.');
+  }
+
   // No node: mining talks to YOUR node, so that is the next thing.
   if (!n.running) {
     return act('start-node', 'Start your node', 'primary',

@@ -135,10 +135,14 @@ export function Payout({ state, onBack, onNext, api }) {
   const [startingNode, setStartingNode] = useState(false);
   const nodeRunning = !!state?.node?.running;
   const asked = useRef('');
+  // What is in the box right now, readable from an async callback that was
+  // started before the last keystroke.
+  const latest = useRef('');
 
   // Offline look, on every keystroke.
   useEffect(() => {
     let live = true;
+    latest.current = value.trim();
     if (!value.trim()) { setFormat(null); setConfirmed(null); return undefined; }
     api.inspectAddress(value.trim()).then((r) => { if (live) setFormat(r); });
     setConfirmed(null);
@@ -150,26 +154,46 @@ export function Payout({ state, onBack, onNext, api }) {
   // on its own: the node takes a few seconds to answer after it starts.
   useEffect(() => {
     const addr = value.trim();
-    if (!format?.looksValid || !nodeRunning || confirmed?.ok) return undefined;
+    // Retry until the node gives a real verdict. `ok` alone is no longer that:
+    // an address the node could not be asked about is accepted and used, but
+    // it is not confirmed, and this screen must not claim otherwise.
+    if (!format?.looksValid || !nodeRunning || confirmed?.confirmed) return undefined;
     if (asked.current === addr && checking) return undefined;
-    let live = true;
+
+    // NO `live` FLAG HERE, and this is the whole point.
+    //
+    // Saving a NEW address restarts the node, because the node carries the
+    // payout in its own config. The restart flips nodeRunning to false, which
+    // re-runs this effect, which ran the old cleanup - and the old cleanup
+    // cancelled the answer that was already on its way. `checking` was never
+    // cleared, the retry loop only re-arms when `checking` is false, and the
+    // step sat on "Waiting for your node to double-check it…" for ever. A
+    // capture run hung there for nine minutes before this was noticed.
+    //
+    // The answer is allowed to land whatever the effect is doing. It is
+    // matched against the address that was asked about instead, so a reply
+    // for a string the user has since edited is the thing that gets dropped.
     const run = async () => {
       asked.current = addr;
       setChecking(true);
-      const r = await api.setPayoutAddress(addr);
-      if (!live) return;
-      setChecking(false);
-      // A node that is not answering yet is not a verdict; try again shortly.
-      if (!r.ok && /not answering yet/i.test(r.error || '')) { asked.current = ''; return; }
+      let r = null;
+      try {
+        r = await api.setPayoutAddress(addr);
+      } finally {
+        setChecking(false);
+      }
+      if (!r || addr !== latest.current) { asked.current = ''; return; }
+      // No verdict is not a verdict; keep asking while the node comes back.
+      if (r.confirmed !== true && r.ok) { asked.current = ''; setConfirmed(null); return; }
       setConfirmed(r);
     };
     const t = setTimeout(run, 400);
-    return () => { live = false; clearTimeout(t); };
+    return () => clearTimeout(t);
   }, [format, nodeRunning, value, confirmed]);
 
   // Keep retrying while the node comes up.
   useEffect(() => {
-    if (!format?.looksValid || confirmed || !nodeRunning) return undefined;
+    if (!format?.looksValid || confirmed?.confirmed || !nodeRunning) return undefined;
     const iv = setInterval(() => { if (!checking && !confirmed) asked.current = ''; }, 4000);
     return () => clearInterval(iv);
   }, [format, confirmed, nodeRunning, checking]);
@@ -214,7 +238,7 @@ export function Payout({ state, onBack, onNext, api }) {
             : !format ? null
             : !format.looksValid ? (
               <Notice kind="bad">{format.hint}</Notice>
-            ) : confirmed && confirmed.ok ? (
+            ) : confirmed && confirmed.ok && confirmed.confirmed ? (
               <Notice kind="ok">
                 <div>
                   <b>{format.label} — checked by your node ✓</b>
@@ -224,7 +248,11 @@ export function Payout({ state, onBack, onNext, api }) {
             ) : confirmed && !confirmed.ok ? (
               <Notice kind="bad">
                 <div>
-                  <b>Your node does not recognise that address.</b>
+                  {/* Only say the node rejected it when the node rejected it.
+                      A node that could not be reached has said nothing. */}
+                  <b>{/does not recognise/.test(confirmed.error || '')
+                    ? 'Your node does not recognise that address.'
+                    : 'That address cannot be used.'}</b>
                   <div className="small">{confirmed.error}</div>
                 </div>
               </Notice>

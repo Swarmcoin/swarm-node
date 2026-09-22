@@ -943,7 +943,10 @@ class ChainEngine extends EventEmitter {
         address: this.address.value,
         kind: this.address.kind,
         detail: this.address.detail,
-        confirmed: this.address.confirmed === true
+        confirmed: this.address.confirmed === true,
+        // Set only when a RUNNING node told us it does not recognise the
+        // address. Never set because the node could not be asked.
+        rejected: this.address.rejected === true
       },
       binaries: this.binaryStatus(),
       lastError: this.lastError
@@ -997,6 +1000,7 @@ class ChainEngine extends EventEmitter {
       value: result.address,
       kind: result.kind,
       detail: result.detail,
+      rejected: false,
       // False when the node could not be asked. The address is usable - the
       // shape is right and mining will pay it - but the app does not claim
       // the node has blessed it, and asks again once the node is up.

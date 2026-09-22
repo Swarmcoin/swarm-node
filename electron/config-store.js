@@ -72,7 +72,14 @@ class SettingsStore {
   }
 
   save(next) {
-    if (next) this.data = { ...this.data, ...next };
+    // IN PLACE, deliberately. The engine is handed this.data at construction
+    // and keeps that reference for its whole life. Replacing the object here
+    // used to leave the engine holding a stale copy, so the next thing the
+    // engine saved wrote its old values back over everything saved by any
+    // other path in between - the consent flag, and worse, the setup
+    // completion marker, which would have sent the user back through the
+    // wizard on every launch. One object, one source of truth.
+    if (next && next !== this.data) Object.assign(this.data, next);
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = this.file + '.tmp';

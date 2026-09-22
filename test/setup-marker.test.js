@@ -78,3 +78,35 @@ test('a hand-edited file cannot introduce keys the app does not know', () => {
 test('the tour is tracked the same way and starts unseen', () => {
   assert.equal(defaults({}).tourSeenVersion, null);
 });
+
+// The bug that would have undone all of the above.
+//
+// The engine is handed settings.data once and keeps that reference. save()
+// used to REPLACE the object, so the engine went on holding the old one; the
+// next thing the engine saved - a payout address, a confirmed address on the
+// tick - wrote its stale copy back over everything saved in between. Found by
+// a capture run whose profile had "consented": false in it, moments after the
+// consent screen had been accepted. The completion marker travels the same
+// path, so the wizard would have returned on every launch.
+test('a save through one path does not undo a save through another', () => {
+  const { store, file, dir } = tmpStore(null);
+  // Whoever holds this reference is the engine.
+  const held = store.data;
+
+  store.save({ consented: true });                 // the consent screen
+  assert.equal(held.consented, true, 'the engine sees it without being told');
+
+  store.save({ setupCompletedVersion: '0.2.0-testnet.3' });   // the wizard ending
+  assert.equal(held.setupCompletedVersion, '0.2.0-testnet.3');
+
+  // Now the engine saves its own object, as it does on every address change.
+  held.payoutAddress = 'tmEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMP';
+  store.save(held);
+
+  const onDisk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(onDisk.consented, true, 'consent survived');
+  assert.equal(onDisk.setupCompletedVersion, '0.2.0-testnet.3', 'the marker survived');
+  assert.equal(onDisk.payoutAddress, 'tmEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMP');
+  assert.equal(opensOnDashboard(new SettingsStore(file, {}).data), true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

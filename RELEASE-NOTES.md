@@ -40,6 +40,19 @@ checked: how many nodes the project's seed server is connected to, read from the
 seed's own status file and labelled for exactly what it is. The app still sends
 nothing about your location anywhere.
 
+**A good address is never called bad.** Pasting a payout address while the
+node was stopped could produce "The node does not recognise that address on
+this network" — about an address that was perfectly correct. The node had
+simply not answered. The app now tells the three cases apart: your node
+confirmed it, your node refused it, or your node could not be asked. In the
+last case the address is accepted and used, marked *not confirmed yet*, and
+the app checks again by itself as soon as the node is running.
+
+**Two copies on one machine no longer fight.** The node's private control port
+is moved to a free one if something else already has it, the same as the peer
+port already was. Before, the second copy stopped with an error nobody could
+act on.
+
 **The Log reads in plain words.** Each line is tagged `node`, `miner` or `app`,
 and the internal module names the programs print for their own developers are
 stripped from the display. The node's own log files on disk keep every original

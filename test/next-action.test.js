@@ -136,3 +136,18 @@ test('a snapshot missing whole sections does not throw', () => {
     assert.ok(ACTIONS.includes(a.id));
   }
 });
+
+test('an address the node has refused is replaced, not mined with', () => {
+  const s = ready({ payout: { address: 'tmEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMP', rejected: true } });
+  const a = nextAction(s);
+  assert.equal(a.id, 'set-address');
+  assert.match(a.label, /Replace/);
+  assert.match(a.why, /does not recognise/);
+});
+
+test('an address merely unconfirmed is NOT treated as refused', () => {
+  // The node could not be asked. That is not a verdict, and it must not stop
+  // anybody mining: this is the case that produced a false accusation once.
+  const s = ready({ payout: { address: 'tmEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMP', confirmed: false, rejected: false } });
+  assert.equal(nextAction(s).id, 'start');
+});
