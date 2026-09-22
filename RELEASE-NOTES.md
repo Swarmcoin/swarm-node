@@ -1,4 +1,4 @@
-# SWARM Node 0.2.0-testnet.3
+# SWARM Node 0.2.0-testnet.4
 
 A small Windows app that turns your computer into a full node of the SWARM test
 network, and mines with your processor when you press Start.
@@ -8,6 +8,32 @@ be sold, and the whole chain may be wiped and started again. Nothing here is a
 promise of earnings. Please treat it as an experiment you are helping to run.
 
 ---
+
+## What changed since 0.2.0-testnet.3
+
+**Installing a new version now stops the old one first.** It did not, and that
+broke mining outright: the previous version's node kept running in the
+background, still holding the chain folder, so the new one could not open it
+and stopped immediately. The app then waited for a node that was never coming.
+The installer now stops whatever is running from the folder it is replacing,
+and the uninstaller does the same, so nothing is left mining after you remove
+the app.
+
+**If another SWARM node is holding your chain folder, the app says so** — in
+one sentence, with a button that stops it and carries on. Before, it tried to
+start on top of it and sat there.
+
+**If the node stops, the Mining page tells you why**, in the node's own words
+put into plain language: another node has the folder, something else has the
+port, the disk is full, the folder is not writable. Never a spinner that never
+ends.
+
+**Shielded mining stays on.** Switching it on restarts the node, because that
+is the only time the node reads that setting — and the app was then treating
+the freshly restarted node's few seconds without peers as a failure, stopping
+mining, restarting the node again to switch mining off, and going round in a
+circle. A node that has just started is now given time to reconnect before
+anything is concluded from its silence.
 
 ## What changed since 0.2.0-testnet.2
 
@@ -86,22 +112,22 @@ and nothing for this app to hold.
 
 | File | What it is |
 | --- | --- |
-| `SWARM-Node-0.2.0-testnet.3-win-x64.exe` | The installer. Adds a Start-menu entry and an uninstall entry. |
-| `SWARM-Node-0.2.0-testnet.3-win-x64.zip` | Portable. Unzip it anywhere and run `SWARM Node.exe`. Installs nothing. |
+| `SWARM-Node-0.2.0-testnet.4-win-x64.exe` | The installer. Adds a Start-menu entry and an uninstall entry. |
+| `SWARM-Node-0.2.0-testnet.4-win-x64.zip` | Portable. Unzip it anywhere and run `SWARM Node.exe`. Installs nothing. |
 
 ### Linux — 64-bit, Debian, Ubuntu, Fedora, Arch and anything else
 
 | File | What it is |
 | --- | --- |
-| `SWARM-Node-0.2.0-testnet.3-linux-x86_64.AppImage` | One file, runs anywhere, installs nothing. |
-| `swarm-node_0.2.0-testnet.3_amd64.deb` | For Debian and Ubuntu: `sudo apt install ./swarm-node_*.deb` |
+| `SWARM-Node-0.2.0-testnet.4-linux-x86_64.AppImage` | One file, runs anywhere, installs nothing. |
+| `swarm-node_0.2.0-testnet.4_amd64.deb` | For Debian and Ubuntu: `sudo apt install ./swarm-node_*.deb` |
 
 **The AppImage will not run until you make it executable.** That is normal for
 every AppImage, not something wrong with this one:
 
 ```
-chmod +x SWARM-Node-0.2.0-testnet.3-linux-x86_64.AppImage
-./SWARM-Node-0.2.0-testnet.3-linux-x86_64.AppImage
+chmod +x SWARM-Node-0.2.0-testnet.4-linux-x86_64.AppImage
+./SWARM-Node-0.2.0-testnet.4-linux-x86_64.AppImage
 ```
 
 If it still does nothing on an older distribution, run it with
@@ -111,8 +137,8 @@ If it still does nothing on an older distribution, run it with
 
 | File | What it is |
 | --- | --- |
-| `SWARM-Node-0.2.0-testnet.3-mac-arm64.dmg` | Apple silicon (M1 and later). |
-| `SWARM-Node-0.2.0-testnet.3-mac-x64.dmg` | Intel Macs. |
+| `SWARM-Node-0.2.0-testnet.4-mac-arm64.dmg` | Apple silicon (M1 and later). |
+| `SWARM-Node-0.2.0-testnet.4-mac-x64.dmg` | Intel Macs. |
 | `…-mac-arm64.zip` / `…-mac-x64.zip` | The same app without the disk image. |
 
 Pick the one that matches your Mac:  > About This Mac. An arm64 build will
@@ -153,7 +179,7 @@ pattern antivirus products watch for. Before you trust any of that, check the
 file you downloaded is the file that was built:
 
 1. Open PowerShell where you saved the file.
-2. Run `Get-FileHash .\SWARM-Node-0.2.0-testnet.3-win-x64.exe -Algorithm SHA256`
+2. Run `Get-FileHash .\SWARM-Node-0.2.0-testnet.4-win-x64.exe -Algorithm SHA256`
 3. Compare it with the matching line in `SHA256SUMS`.
 
 If those two strings differ, do not run the file.
