@@ -32,15 +32,13 @@ export function tourSteps(s, cfg) {
       body: (
         <>
           <p>
-            This page starts and stops mining. There is one main button and it always does the
-            next useful thing: start your node if it is not running, ask for a payout address if
-            you have not given one, or start mining when everything is ready.
+            One main button, and it always does the next useful thing: start your node, ask for a
+            payout address, or start mining.
           </p>
           <p>
-            While your node is still catching up the button reads <b>Start mining when ready</b>.
-            Press it and you can walk away — mining begins by itself the moment your node is in a
-            state where the work would count. The line under the button always says what it is
-            waiting for.
+            While your node is catching up it reads <b>Start mining when ready</b>. Press it and
+            walk away — mining begins by itself the moment the work would count. The line under
+            it always says what it is waiting for.
           </p>
         </>
       )
