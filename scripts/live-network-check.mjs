@@ -122,12 +122,12 @@ try {
     await engine.refreshChain();
     const d = engine.evaluateGate();
     if (engine.chain.peers > 0) sawPeer = true;
-    if (engine.chain.catchingUp) heldBackWhileDownloading = true;
+    if (Number.isFinite(d.behind) && d.behind > 2) heldBackWhileDownloading = true;
     const line =
       `peers=${engine.chain.peers} (${engine.chain.peersIn} in/${engine.chain.peersOut} out) ` +
-      `height=${engine.chain.height} +${engine.chain.blocksGainedRecently}/30s ` +
-      `tipAge=${engine.chain.tipAgeSec}s catchingUp=${engine.chain.catchingUp} ` +
-      `upToDate=${engine.chain.synced} gate=${d.allow ? 'allow' : d.reason}`;
+      `mine=#${engine.chain.height} network=#${engine.chain.networkHeight} ` +
+      `behind=${d.behind} tipAge=${engine.chain.tipAgeSec}s ` +
+      `upToDate=${engine.chain.synced} gate=${d.allow ? 'ALLOW' : d.reason}`;
     if (line !== lastLine) { console.log(`    ${line}`); lastLine = line; }
     // "Up to date" has to HOLD, not just flicker true once between two bursts
     // of the initial download.
@@ -136,7 +136,24 @@ try {
     await sleep(4000);
   }
   check('while it was downloading, mining was held back', heldBackWhileDownloading,
-    heldBackWhileDownloading ? 'the catching-up signal fired' : 'never saw a download burst');
+    heldBackWhileDownloading ? 'the gate saw this node behind the wallet server while it caught up' : 'the node was already at the tip when the check started');
+
+  // Defect N-1: once the node is at the tip, the gate must open regardless of
+  // how long ago the newest block happened to arrive.
+  {
+    const d = engine.evaluateGate();
+    check('N-1: the gate has an independent view of the tip',
+      engine.chain.networkHeight != null,
+      engine.chain.networkHeight != null
+        ? `wallet server says #${engine.chain.networkHeight}, this node #${engine.chain.height}`
+        : `unavailable: ${engine.chain.networkHeightError}`);
+    check('N-1: at the tip, tip age does NOT hold mining back',
+      d.reason !== 'tip-too-old' && d.reason !== 'node-still-syncing',
+      `tip is ${engine.chain.tipAgeSec}s old and the gate says ${d.reason}`);
+    check('N-1: the only thing left holding mining back is the missing address',
+      d.reason === 'no-payout-address', d.reason);
+    console.log(`    rule in force: ${d.rule}`);
+  }
 
   check('the node connects to the seed', sawPeer, `${engine.chain.peers} peer(s)`);
   check('the node reaches the network tip', synced, `height ${engine.chain.height}, tip ${engine.chain.tipAgeSec}s old`);

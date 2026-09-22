@@ -23,8 +23,8 @@ on:
     paths-ignore: ['**/*.md']
 
 permissions:
-  contents: read
-  actions: read          # needed to download artifacts from the public privacy-zebra repo
+  contents: write        # read the vendored-binaries pre-release, write the draft build release
+  actions: read
 
 jobs:
   build:
@@ -231,10 +231,43 @@ jobs:
           Write-Host "--- release-manifest.json ---"
           Get-Content out/release-manifest.json
 
-      - name: Upload the installer, the zip and the checksums
+      # Primary delivery: a DRAFT pre-release of this private repository.
+      #
+      # Not published, not public, and not a product release — a draft is
+      # invisible outside the repository and has to be published deliberately.
+      # It exists because the organisation's Actions artifact storage is full
+      # (run 35677346315 built everything correctly and then failed with
+      # "Artifact storage quota has been hit"; the ~3.3 GB in use belongs to
+      # other workstreams and is not mine to delete). Release assets do not
+      # come out of that quota.
+      #
+      # It is also exactly the shape the planner asked for: publishing after
+      # the audit is one command, `gh release edit <tag> --draft=false`.
+      - name: Put the build on a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "build-$version"
+          $existing = gh release view $tag -R ${{ github.repository }} --json tagName 2>$null
+          if (-not $existing) {
+            gh release create $tag -R ${{ github.repository }} --draft --prerelease `
+              --title "SWARM Node $version (draft — not published)" `
+              --notes "Draft build from commit ${{ github.sha }}, workflow run ${{ github.run_id }}. NOT AUDITED AND NOT PUBLISHED. Checksums are in SHA256SUMS; what went into the build is in release-manifest.json."
+          }
+          gh release upload $tag -R ${{ github.repository }} --clobber (Get-ChildItem out -File | ForEach-Object { $_.FullName })
+          Write-Host "draft release: https://github.com/${{ github.repository }}/releases/tag/$tag"
+
+      # Secondary, and allowed to fail: the same files as a workflow artifact.
+      # Convenient while it works, but the quota above makes it unreliable, and
+      # a storage limit must never fail a build that produced a good installer.
+      - name: Also upload as a workflow artifact (best effort)
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: swarm-node-windows-x64
           path: out/**
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7

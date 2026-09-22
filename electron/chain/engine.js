@@ -66,7 +66,8 @@ class ChainEngine extends EventEmitter {
     // The independent view of the tip. See tip-oracle.js and defect N-1: a
     // node cannot tell whether it is behind by looking only at itself.
     this.tipOracle = new TipOracle({
-      url: this.settings.tipOracleUrl || gateCfg.tip_oracle_url || null
+      url: this.settings.tipOracleUrl || gateCfg.tip_oracle_url || null,
+      expectChain: (this.manifest.identity || {}).light_wallet_chain_label || null
     });
     // When this node last accepted a new block, which separates "still
     // downloading" from "the chain is simply quiet".

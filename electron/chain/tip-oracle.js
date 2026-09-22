@@ -28,11 +28,19 @@
 const http2 = require('http2');
 const { URL } = require('url');
 
-// GetLightdInfo takes an empty protobuf message and returns LightdInfo, whose
-// field 9 is blockHeight (varint). We speak just enough gRPC to ask that one
-// question: a 5-byte length-prefixed frame containing an empty message.
+// GetLightdInfo takes an empty protobuf message and returns LightdInfo. We
+// speak just enough gRPC to ask that one question: a 5-byte length-prefixed
+// frame containing an empty message.
+//
+// Field numbers read off the live server on 2026-09-22, not guessed:
+//   1 version "0.10.0"   2 vendor "ZingoLabs ZainoD"   4 chainName
+//   7 blockHeight        12 estimatedHeight            14 "/Zebra:6.3.0/"
+// blockHeight is 7. An earlier draft used 9, which is `branch` — a string —
+// and the oracle silently reported "no block height" every time.
 const GRPC_PATH = '/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo';
 const EMPTY_MESSAGE = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x00]); // uncompressed, length 0
+const FIELD_CHAIN_NAME = 4;
+const FIELD_BLOCK_HEIGHT = 7;
 
 /** Read a protobuf varint at `offset`. Returns [value, nextOffset]. */
 function readVarint(buf, offset) {
@@ -95,6 +103,9 @@ class TipOracle {
    */
   constructor(cfg = {}) {
     this.url = cfg.url || null;
+    // The chain label this server must report, so a server that has been
+    // repointed at another network cannot quietly become our second opinion.
+    this.expectChain = cfg.expectChain || null;
     this.timeoutMs = Number(cfg.timeoutMs) || 8000;
     this.minIntervalMs = Number(cfg.minIntervalMs) || 20000;
     this.lastAskedAt = 0;
@@ -174,7 +185,14 @@ class TipOracle {
         // 1 byte compression flag + 4 byte big-endian length, then the message.
         const len = body.readUInt32BE(1);
         const msg = body.subarray(5, 5 + len);
-        const height = findField(msg, 9);   // LightdInfo.blockHeight
+        if (this.expectChain) {
+          const nameBuf = findField(msg, FIELD_CHAIN_NAME);
+          const name = Buffer.isBuffer(nameBuf) ? nameBuf.toString('utf8') : null;
+          if (name !== this.expectChain) {
+            return done(new Error(`the wallet server is on "${name}", not "${this.expectChain}"`));
+          }
+        }
+        const height = findField(msg, FIELD_BLOCK_HEIGHT);
         if (typeof height !== 'bigint') return done(new Error('the wallet server sent no block height'));
         const n = Number(height);
         if (!Number.isSafeInteger(n) || n < 0 || n > 100000000) return done(new Error('the wallet server sent an implausible height'));
@@ -185,4 +203,4 @@ class TipOracle {
   }
 }
 
-module.exports = { TipOracle, findField, readVarint, GRPC_PATH };
+module.exports = { TipOracle, findField, readVarint, GRPC_PATH, FIELD_BLOCK_HEIGHT, FIELD_CHAIN_NAME };
