@@ -139,11 +139,9 @@ try {
   };
 
   const seen = new Map();
-  const shotRaw = async (name, atText = '') => {
+  const shotRaw = async (name, buf, atText = '') => {
     // No bringToFront: there is no window to bring anywhere, and pulling one
     // in front of the user is the thing this harness must never do.
-    await sleep(400);
-    const buf = await shots.take();
     const md5 = crypto.createHash('md5').update(buf).digest('hex');
     fs.writeFileSync(path.join(outDir, `${name}.png`), buf);
     const prior = seen.get(md5);
@@ -195,9 +193,16 @@ try {
   let n = 0;
   const step = async (state) => {
     n += 1;
+    const name = `${String(n).padStart(2, '0')}-${state}--shows-${await pageName()}`;
+    // The picture first, THEN the text, so the two describe the same instant.
+    // Reading the text first let the page move on between the reading and the
+    // shutter, and a pair that really WAS the same screen was then reported as
+    // a stale capture. The payout step confirms an address in well under a
+    // second, which is exactly long enough to fall down that gap.
+    const buf = await shots.take();
     let text = '';
     try { text = await evaluate("(document.body.innerText || '').replace(/\s+/g, ' ').trim()"); } catch { /* mid-render */ }
-    await shotRaw(`${String(n).padStart(2, '0')}-${state}--shows-${await pageName()}`, text);
+    await shotRaw(name, buf, text);
   };
 
   const click = async (text) => evaluate(`(() => {

@@ -172,9 +172,10 @@ async function withProfile(name, seed, walk) {
     let n = 0;
     const step = async (label) => {
       n += 1;
+      // Picture first, then text, so the two describe the same instant.
+      const buf = await shots.take();
       let text = '';
       try { text = await evaluate("(document.body.innerText || '').replace(/\\s+/g, ' ').trim()"); } catch { /* mid-render */ }
-      const buf = await shots.take();
       const file = `${name}-${String(n).padStart(2, '0')}-${label}.png`;
       fs.writeFileSync(path.join(outDir, file), buf);
       const md5 = crypto.createHash('md5').update(buf).digest('hex');
