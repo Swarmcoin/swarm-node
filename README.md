@@ -60,6 +60,15 @@ block this app generates is **byte for byte** what `scripts/swarm/render_config.
 generates for the seed server. A node that disagrees about any of those values
 is not slightly wrong, it is on a different chain.
 
+## Where the bundled programs come from
+
+`electron/net/PROVENANCE.md` records, per file, the branch, the commit, the
+upstream base it was built on and exactly what that branch changes. The short
+version: the node is the official `v6.3.0` release plus a CI workflow and
+nothing else; the miner is built from an upstream tree 333 commits later plus
+two new binaries, with no existing source file modified. They are **not** the
+same tree, and that is stated rather than smoothed over.
+
 ## Three Windows facts this app is built around
 
 All three were measured on a real machine, and all three are non-obvious enough

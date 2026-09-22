@@ -25,7 +25,7 @@ const { SyncGate, tipAgeSeconds, REASON } = require('./sync-gate');
 const { RewardLedger, coinbasePaidTo, parseMinedLine, splitSubsidy } = require('./rewards');
 const { validateWithNode } = require('./address');
 const { machineCheck, canBindPort, freeEphemeralPort } = require('./hardware');
-const { requireBinary } = require('./binaries');
+const { requireBinary, loadBaseline } = require('./binaries');
 const { TipOracle } = require('./tip-oracle');
 
 const TICK_MS = 1000;
@@ -139,9 +139,30 @@ class ChainEngine extends EventEmitter {
     const m = this.simulateStandardMiner
       ? { ok: true, path: null, sha256: null, reason: 'SIMULATED — no miner binary; this build cannot mine with the standard engine' }
       : requireBinary('miner', { allowUnpinned: this.allowUnpinned });
+    // Where each program came from, straight out of the baseline file that
+    // also pins its hash, so the About screen cannot drift from the manifest.
+    const baseline = loadBaseline();
+    const prov = (k) => {
+      const b = baseline[k] || {};
+      return {
+        branch: b.branch || null,
+        commit: b.commit || null,
+        upstreamBase: b.upstream_base || null,
+        changes: b.changes_vs_upstream || null,
+        workflowRun: b.workflow_run || null
+      };
+    };
     return {
-      zebrad: { ok: z.ok, reason: z.reason, sha256: z.sha256, path: z.ok ? path.basename(z.path || '') : null },
-      miner: { ok: m.ok, reason: m.reason, sha256: m.sha256, simulated: this.simulateStandardMiner }
+      zebrad: {
+        ok: z.ok, reason: z.reason, sha256: z.sha256,
+        path: z.ok ? path.basename(z.path || '') : null,
+        provenance: prov('zebrad')
+      },
+      miner: {
+        ok: m.ok, reason: m.reason, sha256: m.sha256,
+        simulated: this.simulateStandardMiner,
+        provenance: prov('miner')
+      }
     };
   }
 

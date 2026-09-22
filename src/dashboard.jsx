@@ -495,11 +495,36 @@ export function SettingsView({ s, cfg, api }) {
             <tr><td className="muted">Automatic updates</td><td className="num">off — this testnet build has no update feed</td></tr>
           </tbody>
         </table>
-        <p className="tiny dim" style={{ marginTop: 12, marginBottom: 0 }}>
-          The node software is Zebra 6.3.0 by the Zcash Foundation, licensed MIT or Apache-2.0 and
-          built from unmodified source. SWARM Node adds no consensus or cryptographic code of its
-          own. The fonts are Sora, Manrope and JetBrains Mono, under the SIL Open Font License 1.1.
-          This app is MIT licensed.
+        {/* Each program says exactly where it came from. The two are NOT from
+            the same upstream tree, and an earlier note claimed they were. */}
+        <div style={{ marginTop: 16 }}>
+          <div className="kicker">Where the bundled programs come from</div>
+          {[['zebrad.exe', s.binaries.zebrad], ['privacy-miner.exe', s.binaries.miner]]
+            .filter(([, b]) => b && b.provenance && b.provenance.commit)
+            .map(([name, b]) => (
+              <div key={name} className="card flat" style={{ marginTop: 10, padding: 12 }}>
+                <div className="row" style={{ gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 12, color: 'var(--honey)' }}>{name}</span>
+                  <span className="tiny dim">{b.sha256 ? b.sha256.slice(0, 16) + '…' : '—'}</span>
+                </div>
+                <div className="tiny muted" style={{ marginTop: 6, lineHeight: 1.6 }}>
+                  branch <span className="mono">{b.provenance.branch}</span> @{' '}
+                  <span className="mono">{b.provenance.commit.slice(0, 12)}</span>, built on{' '}
+                  {b.provenance.upstreamBase}
+                </div>
+                <div className="tiny dim" style={{ marginTop: 4, lineHeight: 1.6 }}>
+                  Changes from upstream: {b.provenance.changes}
+                </div>
+              </div>
+            ))}
+        </div>
+        <p className="tiny dim" style={{ marginTop: 14, marginBottom: 0 }}>
+          The node software is Zebra by the Zcash Foundation, licensed MIT or Apache-2.0. SWARM
+          Node adds no consensus or cryptographic code of its own. The two programs above come
+          from different upstream trees, which is recorded rather than smoothed over: the miner
+          asks the node for work and the node validates everything it accepts, so the node&apos;s
+          rules decide. The fonts are Sora, Manrope and JetBrains Mono, under the SIL Open Font
+          License 1.1. This app is MIT licensed.
         </p>
         {!s.binaries.zebrad.ok ? <div style={{ marginTop: 12 }}><Notice kind="bad">{s.binaries.zebrad.reason}</Notice></div> : null}
       </div>
