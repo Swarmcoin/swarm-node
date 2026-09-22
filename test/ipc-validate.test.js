@@ -64,7 +64,17 @@ test('a data folder must be absolute, local, and outside the Windows directories
     assert.throws(() => V.dataDir('C:\\Program Files\\x'), /belongs to Windows/);
     assert.throws(() => V.dataDir('\\\\server\\share'), /belongs to Windows|local drive/);
   }
-  assert.throws(() => V.dataDir('D:\\a\\..\\..\\Windows'), /may not contain/);
+  // The rule about ".." holds everywhere, but the path it is tested with has
+  // to be absolute FOR THIS PLATFORM, or the absolute-path check fires first
+  // and the assertion reads the wrong refusal. That is what failed the first
+  // Linux run: a Windows path is simply not absolute on Linux.
+  if (process.platform === 'win32') {
+    assert.throws(() => V.dataDir('D:\\a\\..\\..\\Windows'), /may not contain/);
+  } else {
+    assert.strictEqual(V.dataDir('/home/me/swarm'), '/home/me/swarm');
+    assert.throws(() => V.dataDir('home/me/swarm'), /absolute/);
+    assert.throws(() => V.dataDir('/home/me/../../etc'), /may not contain/);
+  }
   assert.throws(() => V.dataDir('ab'), /too short/);
 });
 
