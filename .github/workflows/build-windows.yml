@@ -180,7 +180,11 @@ jobs:
       # the bundle threw at load and React never mounted. This launches the real
       # packaged app and fails unless something is on the page.
       - name: Renderer smoke test (packaged app must not open blank)
-        run: node scripts/smoke-renderer.mjs release/win-unpacked out
+        # NOT into out/: that folder becomes the release's downloads, and a
+        # debug screenshot landing there would be hashed into SHA256SUMS and
+        # offered to people as if it were part of the product (it was, in
+        # build-0.2.0-testnet.2).
+        run: node scripts/smoke-renderer.mjs release/win-unpacked smoke
         # The script's own hard deadline is 150 s; this is the backstop, and
         # it must never be the thing that ends the step.
         timeout-minutes: 5
@@ -337,6 +341,16 @@ jobs:
       # Secondary, and allowed to fail: the same files as a workflow artifact.
       # Convenient while it works, but the quota above makes it unreliable, and
       # a storage limit must never fail a build that produced a good installer.
+      - name: Keep the smoke-test screenshot as evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: swarm-node-renderer-smoke
+          path: smoke/**
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Also upload as a workflow artifact (best effort)
         uses: actions/upload-artifact@v4
         continue-on-error: true

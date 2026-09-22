@@ -176,17 +176,25 @@ try {
   await sleep(800);
   await shot('05-payout-typed');
 
-  await clickText('check this address');
-  await sleep(9000);
-  await shot('06-payout-checked');
-
-  await clickText('continue');
+  // No button here any more: the node checks by itself. Photograph the wait,
+  // then the confirmation when it lands.
   await sleep(2500);
-  await shot('07-machine-check');
+  await shot('06-payout-waiting-for-node');
+  const confirmedBy = Date.now() + 90000;
+  while (Date.now() < confirmedBy) {
+    const ok = await evaluate("/checked by your node/i.test(document.body.innerText || '')");
+    if (ok) break;
+    await sleep(2000);
+  }
+  await shot('07-payout-confirmed-by-node');
 
-  await clickText('go to my node');
-  await sleep(4000);
-  await shot('08-mining');
+  if (!(await clickText('continue'))) console.log('  (Continue was disabled)');
+  await sleep(3000);
+  await shot('08-machine-check');
+
+  if (!(await clickText('go to my node'))) console.log('  (could not leave the machine check)');
+  await sleep(6000);
+  await shot('09-mining');
 
   // The other tabs are nav buttons in the rail.
   const tab = async (label, file, wait = 3000) => {
@@ -205,18 +213,18 @@ try {
     return true;
   };
 
-  await tab('node', '09-node');
-  await tab('honey', '10-honey');
-  await tab('swarm map', '11-swarm-map', 7000);
-  await tab('settings', '12-settings-about', 3000);
-  // The About block is at the bottom of Settings.
-  await evaluate(`document.querySelector('.content').scrollTop = 99999`);
-  await sleep(900);
-  await shot('13-settings-bottom-about');
-  await tab('log', '14-log');
-
-  // Back to Mining for the held-back state with the two heights on screen.
-  await tab('mining', '15-mining-gate-detail', 3000);
+  await tab('node', '10-node');
+  await tab('honey', '11-honey');
+  await tab('swarm map', '12-swarm-map', 9000);
+  if (await tab('settings', '13-settings', 3000)) {
+    // The About block is at the bottom of Settings.
+    await evaluate("(document.querySelector('.content') || {}).scrollTop = 99999");
+    await sleep(900);
+    await shot('14-settings-about');
+  }
+  await tab('log', '15-log');
+  // Back to Mining for the held-back state with both heights on screen.
+  await tab('mining', '16-mining-gate-detail', 4000);
 
   console.log('\ndone');
   await cleanup(0);
