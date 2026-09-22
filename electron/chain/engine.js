@@ -28,10 +28,15 @@ const { machineCheck, canBindPort, freeEphemeralPort } = require('./hardware');
 const { requireBinary, loadBaseline } = require('./binaries');
 const { TipOracle } = require('./tip-oracle');
 const { nextAction } = require('./next-action');
+const { explainExit, findForeignNode, stopNodeProcess, writeRecord, clearRecord } = require('./node-trouble');
 
 const TICK_MS = 1000;
 const SCAN_BUDGET_PER_TICK = 25;   // blocks re-checked per tick by the backstop scan
 const IDLE_THRESHOLD_S = 120;      // "pause while I'm using the machine"
+// How long a freshly started node may take to find peers before its silence
+// counts against it. Shielded mining restarts the node by design, so this is
+// the difference between mining and a restart loop. See N-8.
+const SETTLE_AFTER_RESTART_MS = 90000;
 
 class ChainEngine extends EventEmitter {
   /**
@@ -117,6 +122,8 @@ class ChainEngine extends EventEmitter {
     this._sizeTick = 0;
     // null until the node has told us which block 0 it holds.
     this.genesisState = null;
+    // Why the node is not running, when the answer is not 'it was not started'.
+    this.nodeTrouble = null;
     this.address = { value: this.settings.payoutAddress || '', kind: this.settings.payoutKind || null, detail: this.settings.payoutDetail || '', confirmed: false };
     this.scanFromHeight = null;
     this.scanCursor = null;
@@ -208,6 +215,26 @@ class ChainEngine extends EventEmitter {
     await this.chooseRpcPort();
 
     fs.mkdirSync(this.dataDir, { recursive: true });
+
+    // N-8. An older version's daemon, still running, still holds this chain
+    // folder's database. Starting on top of it does not fail politely: the
+    // new daemon panics with "Database likely already open" and exits, and
+    // the app used to sit there for ever. Look first, and say so.
+    const foreign = findForeignNode(this.dataDir, this.node ? this.node.pid : null);
+    if (foreign) {
+      this.nodeTrouble = {
+        action: 'stop-foreign-node',
+        pid: foreign.pid,
+        text: 'A SWARM node from an earlier version is still running and is using this chain folder. '
+          + 'Two nodes cannot share it, so this one cannot start until that one stops.',
+        detail: `${foreign.source} (process ${foreign.pid})`
+      };
+      this.lastError = this.nodeTrouble.text;
+      this.log(`${this.nodeTrouble.text} ${this.nodeTrouble.detail}`);
+      return { ok: false, error: this.nodeTrouble.text, code: 'FOREIGN_NODE', pid: foreign.pid };
+    }
+    this.nodeTrouble = null;
+
     this.node = new ZebraNode({ binaryPath: bin.path, dataDir: this.dataDir, manifest: this.manifest });
     // Rewrite or drop the node's more alarming lines before they reach the
     // log the user reads. See translateNodeLine.
@@ -215,7 +242,17 @@ class ChainEngine extends EventEmitter {
     this.node.on('log', (e) => this.emit('log', e));
     this.node.on('line', (line) => this.onNodeLine(line));
     this.node.on('exit', (info) => {
-      if (!info || !info.expected) this.log('the node stopped unexpectedly; mining has been stopped too');
+      if (!info || !info.expected) {
+        // NEVER a spinner. The daemon writes why it died to its own error
+        // log; read it and put that on the Mining page as the reason.
+        const why = explainExit(path.join(this.dataDir, 'logs'));
+        this.nodeTrouble = why
+          ? { action: why.action, text: why.text, detail: why.raw, pid: null }
+          : { action: null, text: 'The node stopped unexpectedly.', detail: null, pid: null };
+        this.lastError = this.nodeTrouble.text;
+        this.log(`the node stopped: ${this.nodeTrouble.text}`);
+        clearRecord(this.dataDir);
+      }
       this.dropMining().catch(() => {});
     });
 
@@ -229,6 +266,11 @@ class ChainEngine extends EventEmitter {
       return { ok: false, error: e.message };
     }
     if (!started.ok) { this.node = null; return started; }
+    // Written down so a later run - or a later VERSION - can recognise a
+    // daemon this app started and never stopped.
+    writeRecord(this.dataDir, { pid: started.pid, startedAt: Date.now(), configPath: started.configPath });
+    this.nodeTrouble = null;
+    this.lastError = null;
     this.log(`node started (pid ${started.pid}) on ${this.manifest.identity.network_name}`);
     this.ensureTicking();
     this.ensureGenesis().catch((e) => this.log(`genesis check failed: ${e.message}`));
@@ -361,6 +403,7 @@ class ChainEngine extends EventEmitter {
     await this.dropMining();
     if (!this.node) return { graceful: true, ms: 0, attempts: 0, hardKilled: false, detail: 'not running' };
     const report = await this.node.stop({ timeoutMs: Number(this.settings.stopTimeoutMs) || 20000 });
+    clearRecord(this.dataDir);
     this.chain = { ...this.chain, height: null, peers: 0, peersIn: 0, peersOut: 0, synced: null, tipAgeSec: null };
     return report;
   }
@@ -746,7 +789,14 @@ class ChainEngine extends EventEmitter {
   // ---------------------------------------------------------------- polling
   ensureTicking() {
     if (this.timer) return;
-    this.timer = setInterval(() => { this.tick().catch(() => {}); }, TICK_MS);
+    // ONE TICK AT A TIME. A tick can await a node restart, which takes
+    // seconds; without this guard the next second's tick runs on top of it,
+    // sees a half-restarted node, and starts a second restart. See N-8.
+    this.timer = setInterval(() => {
+      if (this._ticking) return;
+      this._ticking = true;
+      this.tick().catch(() => {}).finally(() => { this._ticking = false; });
+    }, TICK_MS);
     if (this.timer.unref) this.timer.unref();
   }
 
@@ -843,7 +893,30 @@ class ChainEngine extends EventEmitter {
     const decision = this.evaluateGate();
 
     // Auto-pause: the gate closed while mining was running.
-    if (this.mining.on && !decision.allow) {
+    //
+    // N-8. Shielded mining is switched on by RESTARTING the node, because
+    // Zebra reads that setting only at start-up. A node that started three
+    // seconds ago has no peers and no height yet - not because anything went
+    // wrong, but because it has not finished connecting. Pausing on that
+    // stopped mining, which restarted the node AGAIN to switch the miner off,
+    // which reset the chain state again, and the two halves of this branch
+    // drove each other in a circle: "the app updates the node but it drops
+    // out of the mining process ... it keeps loading but never keeps going".
+    //
+    // So a running node is given until SETTLE_AFTER_RESTART_MS to connect
+    // before its silence is read as a failure. Nothing else is suppressed: a
+    // node that is genuinely dead, or on the wrong chain, still stops mining
+    // at once, because `settling` requires the node to be running.
+    const upFor = this.node && this.node.startedAt ? Date.now() - this.node.startedAt : Infinity;
+    const settling = !!(this.node && this.node.running) && upFor < SETTLE_AFTER_RESTART_MS;
+
+    if (this.mining.on && !decision.allow && settling) {
+      // Say it once, so the Log explains the wait instead of going quiet.
+      if (!this._settleNoted) {
+        this._settleNoted = true;
+        this.log('the node has just restarted; waiting for it to reconnect before judging it');
+      }
+    } else if (this.mining.on && !decision.allow) {
       this.mining.pausedByGate = true;
       this.log(`mining paused (${decision.reason}): ${decision.message}`);
       await this.stopMiningInternal('sync gate closed');
@@ -856,6 +929,7 @@ class ChainEngine extends EventEmitter {
       // The user pressed "Start mining when ready" while the node was still
       // catching up. This is that promise being kept.
       this.mining.armed = false;
+      this._settleNoted = false;
       this.log('starting mining: your node is ready, as you asked');
       const r = await this.startMining();
       if (r && r.ok === false) this.log(`could not start mining: ${r.error}`);
@@ -920,7 +994,9 @@ class ChainEngine extends EventEmitter {
         rpcMoved: this.rpcMoved,
         rpcPort: this.rpcPort,
         lastStop: this.node ? this.node.lastStopReport : null,
-        genesis: this.genesisState
+        genesis: this.genesisState,
+        // Why the node is not running, in words, when something is wrong.
+        trouble: this.nodeTrouble || null
       },
       mining: {
         on: this.mining.on,
@@ -1012,6 +1088,32 @@ class ChainEngine extends EventEmitter {
     } catch { /* a node that stops mid-check is not an answer either */ } finally {
       this._confirming = false;
     }
+  }
+
+  /**
+   * End the older version's daemon the user was told about, and carry on.
+   *
+   * Only ever called with a process this app has just reported to the user,
+   * and only after they pressed the button. It never goes looking for
+   * something to kill.
+   */
+  async stopForeignNode() {
+    const t = this.nodeTrouble;
+    const pid = t && Number.isInteger(t.pid) ? t.pid : (findForeignNode(this.dataDir, this.node ? this.node.pid : null) || {}).pid;
+    if (!Number.isInteger(pid)) {
+      this.nodeTrouble = null;
+      return { ok: true, nothingToStop: true };
+    }
+    this.log(`stopping the older SWARM node (process ${pid}) so this one can use the chain folder`);
+    const r = stopNodeProcess(pid);
+    if (!r.ok) {
+      this.log(`could not stop process ${pid}: ${r.error || 'it is still running'}`);
+      return { ok: false, error: `Could not stop process ${pid}. Close the older SWARM Node yourself, or restart the computer.` };
+    }
+    clearRecord(this.dataDir);
+    this.nodeTrouble = null;
+    this.lastError = null;
+    return this.startNode();
   }
 
   // ---------------------------------------------------------------- settings

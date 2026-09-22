@@ -16,7 +16,8 @@
 'use strict';
 
 /** The action ids the renderer must handle. Anything else is a bug. */
-const ACTIONS = ['stop', 'start', 'arm', 'disarm', 'start-node', 'set-address', 'fix-binary', 'override'];
+const ACTIONS = ['stop', 'start', 'arm', 'disarm', 'start-node', 'set-address', 'fix-binary', 'override',
+  'stop-foreign-node', 'choose-folder'];
 
 /**
  * @param {object} state the engine snapshot (getState)
@@ -56,6 +57,23 @@ function nextAction(state) {
   if (p.rejected === true) {
     return act('set-address', 'Replace your payout address', 'primary',
       'Your node does not recognise the address saved here, so nothing could be paid to it.');
+  }
+
+  // The node is not running AND something is known to be wrong with it.
+  //
+  // N-8: an older version's daemon held the chain database, the new one
+  // panicked on start and exited, and the app showed the armed spinner for
+  // ever. A stopped node that has a REASON must show the reason and a button
+  // that acts on it - never a spinner, and never a bare "Start your node"
+  // that will fail the same way again.
+  if (!n.running && n.trouble && n.trouble.text) {
+    if (n.trouble.action === 'stop-foreign-node') {
+      return act('stop-foreign-node', 'Stop it and continue', 'primary', n.trouble.text);
+    }
+    if (n.trouble.action === 'choose-folder') {
+      return act('choose-folder', 'Choose another chain folder', 'primary', n.trouble.text);
+    }
+    return act('start-node', 'Try starting your node again', 'primary', n.trouble.text);
   }
 
   // No node: mining talks to YOUR node, so that is the next thing.

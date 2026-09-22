@@ -252,6 +252,7 @@ function registerIpc() {
   handle('engine:startMining', () => engine.startMining());
   handle('engine:stopMining', () => engine.stopMining());
   handle('engine:armMining', (on) => engine.armMining(V.bool(on, 'start when ready')));
+  handle('engine:stopForeignNode', () => engine.stopForeignNode());
   handle('engine:setMiningMode', (mode) => engine.setMiningMode(V.miningMode(mode)));
   handle('engine:setIntensity', (n) => engine.setIntensity(V.int(n, { min: 1, max: 256, name: 'intensity' })));
   handle('engine:setIdleOnly', (v) => engine.setIdleOnly(V.bool(v, 'idle-only')));

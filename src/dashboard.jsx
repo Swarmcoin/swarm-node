@@ -35,6 +35,8 @@ export function MiningView({ s, api }) {
     else if (id === 'start-node') r = await api.startNode();
     else if (id === 'set-address') api.goToPayout();
     else if (id === 'fix-binary') r = await api.setMiningMode('shielded');
+    else if (id === 'stop-foreign-node') r = await api.stopForeignNode();
+    else if (id === 'choose-folder') r = await api.chooseDataFolder();
     else if (id === 'override') r = await api.setUserOverride(true);
     if (r && r.ok === false) setErr(r.error);
     setBusy(false);

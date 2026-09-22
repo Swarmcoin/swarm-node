@@ -55,6 +55,7 @@ export default function App() {
     startMining: () => window.engine.startMining(),
     stopMining: () => window.engine.stopMining(),
     armMining: (on) => window.engine.armMining(on),
+    stopForeignNode: () => window.engine.stopForeignNode(),
     // The Mining page's primary button may need to leave the page — "add a
     // payout address" is not something that screen can do. It is routed here
     // rather than by the page, so the page never has to know about tabs.

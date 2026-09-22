@@ -48,6 +48,7 @@ jobs:
             node_sha: 17c5297c4f4fda72982f1d6c2e4f4682ea434390e87639108eaa0f9912948ffe
             miner_sha: 740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6
             expect: 'x86_64|amd64'
+            arch: x64
           - key: darwin-arm64
             runs-on: macos-14
             builder: --mac --arm64
@@ -56,6 +57,7 @@ jobs:
             node_sha: 102b6ec3e6c8bee6ffcbce3c595ff31149ddf8b389aaed4ce065e76eee32ef38
             miner_sha: b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a
             expect: 'mac-arm64'
+            arch: arm64
           - key: darwin-x64
             runs-on: macos-13
             builder: --mac --x64
@@ -64,6 +66,7 @@ jobs:
             node_sha: PENDING
             miner_sha: PENDING
             expect: 'mac-x64'
+            arch: x64
 
     name: ${{ matrix.key }}
     runs-on: ${{ matrix.runs-on }}
@@ -179,6 +182,24 @@ jobs:
       - name: Build the packages
         if: steps.want.outputs.run == 'yes'
         run: npx electron-builder ${{ matrix.builder }} --publish never
+
+      # A NAME IS NOT EVIDENCE. This reads the Electron executable and both
+      # bundled programs with lipo (macOS) or readelf (Linux) and fails the
+      # build unless every one of them really is this job's architecture.
+      # A package named mac-x64 carrying arm64 binaries reached a draft once.
+      - name: Every binary must really be this architecture
+        if: steps.want.outputs.run == 'yes'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/check-arch.sh
+          if [ "$RUNNER_OS" = macOS ]; then
+            dir=$(find release -maxdepth 1 -type d -name 'mac*' -print -quit)
+          else
+            dir=$(find release -maxdepth 1 -type d -name 'linux-unpacked*' -print -quit)
+          fi
+          [ -n "$dir" ] || { echo "no unpacked build found"; ls -R release | head -40; exit 1; }
+          scripts/check-arch.sh "$dir" '${{ matrix.arch }}'
 
       - name: String sweep (packaged app.asar)
         if: steps.want.outputs.run == 'yes'
