@@ -184,9 +184,22 @@ jobs:
           $bins    = Get-Content electron/net/binaries.json -Raw | ConvertFrom-Json
 
           New-Item -ItemType Directory -Force out | Out-Null
-          Get-ChildItem release -Include *.exe, *.zip -Recurse -File |
-            Where-Object { $_.Name -notlike '*.blockmap' } |
-            ForEach-Object { Copy-Item $_.FullName (Join-Path 'out' $_.Name) -Force }
+          # Only the two files electron-builder produced FOR THE USER, named
+          # exactly as artifactName says. A -Recurse here walks into
+          # release/win-unpacked and sweeps up the app's own internals —
+          # elevate.exe, zebrad.exe, privacy-miner.exe — which then end up on
+          # the release looking like things to download. (It did: run
+          # 35677791304.) Match the names instead of hunting by extension.
+          $wanted = @(
+            "SWARM-Node-$version-win-x64.exe",
+            "SWARM-Node-$version-win-x64.zip"
+          )
+          foreach ($name in $wanted) {
+            $src = Join-Path 'release' $name
+            if (-not (Test-Path -LiteralPath $src)) { throw "electron-builder did not produce $name" }
+            Copy-Item $src (Join-Path 'out' $name) -Force
+          }
+          Write-Host "collected:"; Get-ChildItem out -File | Select-Object Name, Length
 
           $files = Get-ChildItem out -File | Sort-Object Name
           $lines = foreach ($f in $files) {
@@ -252,6 +265,12 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = "build-$version"
           $existing = gh release view $tag -R ${{ github.repository }} --json tagName 2>$null
+          # Clear any asset a previous run left behind, so the draft always
+          # holds exactly this build's four files and nothing else.
+          if ($existing) {
+            $old = gh release view $tag -R ${{ github.repository }} --json assets -q '.assets[].name' 2>$null
+            foreach ($a in $old) { if ($a) { gh release delete-asset $tag $a -R ${{ github.repository }} --yes 2>$null } }
+          }
           if (-not $existing) {
             gh release create $tag -R ${{ github.repository }} --draft --prerelease `
               --title "SWARM Node $version (draft — not published)" `
