@@ -35,7 +35,7 @@ console.log(`app      : ${exe}`);
 console.log(`data dir : ${dataDir}   (throwaway, deleted afterwards)`);
 console.log(`out      : ${outDir}\n`);
 
-const child = spawn(exe, [`--remote-debugging-port=${PORT}`, '--remote-allow-origins=*'], {
+const child = spawn(exe, [`--remote-debugging-port=${PORT}`], {
   env: {
     ...process.env,
     // Builds from 0.2.0-testnet.2 onwards honour this and keep entirely out
@@ -108,7 +108,7 @@ let cdp;
 try {
   const page = await waitForTarget();
   cdp = new WebSocket(page.webSocketDebuggerUrl);
-  await cdp.open();
+  await cdp.open(15000);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
 

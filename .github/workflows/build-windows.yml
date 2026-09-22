@@ -180,8 +180,10 @@ jobs:
       # the bundle threw at load and React never mounted. This launches the real
       # packaged app and fails unless something is on the page.
       - name: Renderer smoke test (packaged app must not open blank)
-        run: node scripts/smoke-renderer.mjs release/win-unpacked
-        timeout-minutes: 6
+        run: node scripts/smoke-renderer.mjs release/win-unpacked out
+        # The script's own hard deadline is 150 s; this is the backstop, and
+        # it must never be the thing that ends the step.
+        timeout-minutes: 5
 
       - name: Checksums and release manifest
         shell: pwsh

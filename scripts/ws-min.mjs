@@ -24,8 +24,20 @@ export class WebSocket {
     this.closed = false;
   }
 
-  open() {
+  /** @param {number} timeoutMs give up rather than wait for ever */
+  open(timeoutMs = 15000) {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const done = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err) reject(err); else resolve();
+      };
+      const timer = setTimeout(() => {
+        try { if (this.socket) this.socket.destroy(); } catch { /* already gone */ }
+        done(new Error(`the debug connection did not open within ${timeoutMs} ms`));
+      }, timeoutMs);
       const u = new URL(this.url);
       const key = crypto.randomBytes(16).toString('base64');
       const req = http.request({
@@ -37,22 +49,26 @@ export class WebSocket {
           Connection: 'Upgrade',
           Upgrade: 'websocket',
           'Sec-WebSocket-Key': key,
-          'Sec-WebSocket-Version': '13',
-          Origin: `http://${u.hostname}:${u.port}`
+          'Sec-WebSocket-Version': '13'
+          // No Origin header on purpose. Chromium rejects a DevTools upgrade
+          // that carries one unless the app was started with
+          // --remote-allow-origins, and loosening the app's debug surface to
+          // work around a header we do not need is the wrong trade. A request
+          // with no origin is accepted.
         }
       });
       req.on('upgrade', (res, socket, head) => {
         const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
-        if (res.headers['sec-websocket-accept'] !== accept) return reject(new Error('bad websocket handshake'));
+        if (res.headers['sec-websocket-accept'] !== accept) return done(new Error('bad websocket handshake'));
         this.socket = socket;
         socket.setNoDelay(true);
         socket.on('data', (d) => this.onData(d));
         socket.on('close', () => { this.closed = true; });
         socket.on('error', () => { this.closed = true; });
         if (head && head.length) this.onData(head);
-        resolve();
+        done();
       });
-      req.on('error', reject);
+      req.on('error', done);
       req.end();
     });
   }
@@ -88,6 +104,10 @@ export class WebSocket {
         this.pending.delete(msg.id);
         if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
         else resolve(msg.result);
+      } else if (msg.method && typeof this.onEvent === 'function') {
+        // Events carry no id. The smoke test needs them: a renderer that threw
+        // while starting says so here and nowhere else.
+        try { this.onEvent(msg); } catch { /* a listener must not break the socket */ }
       }
     }
   }
