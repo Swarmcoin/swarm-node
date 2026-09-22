@@ -289,12 +289,21 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = "build-$version"
           $manual = '${{ github.event_name }}' -eq 'workflow_dispatch'
-          $exists = $null -ne (gh release view $tag -R ${{ github.repository }} --json tagName 2>$null)
+
+          # `gh release view` exits non-zero when the release is absent, and the
+          # Actions pwsh wrapper turns the step's last exit code into the step's
+          # result. That made this guard FAIL the build instead of skipping the
+          # release — run 35684893551. A guard must never fail anything.
+          gh release view $tag -R ${{ github.repository }} --json tagName 2>$null | Out-Null
+          $exists = $LASTEXITCODE -eq 0
+          $global:LASTEXITCODE = 0
+
           $touch = $manual -or (-not $exists)
           if ($exists -and -not $manual) {
             Write-Host "::notice::$tag already exists and this run was not started by hand, so its assets are left alone. Bump the version for a new draft, or dispatch the workflow to replace this one."
           }
           "touch=$($touch.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
 
       - name: Put the build on a draft release
         if: steps.gate.outputs.touch == 'true'
