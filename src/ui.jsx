@@ -1,18 +1,27 @@
-// Shared presentation pieces: the hive-bee mark, icons, and the small
+// Shared presentation pieces: the SWARM mark, icons, and the small
 // building blocks the screens are assembled from.
 
 import React from 'react';
 
-/** The hive bee from the SWARM brand sheet. Also the app icon. */
+/**
+ * The SWARM mark: an amber chevron over the hive's two eyes.
+ *
+ * A file, not a drawing. `public/swarm-mark.svg` is installed from the brand
+ * kit together with every app icon, so this window's logo and the icon in the
+ * taskbar are the same artwork; the inline hive bee this replaces was a second
+ * drawing of the same logo, which is how a window ends up showing an older mark
+ * than the icon beside it. Installed by `scripts/brand/install_app_brand.py` in
+ * the project repository.
+ */
 export function Mark({ size = 34 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <ellipse cx="21" cy="17" rx="12" ry="6.5" transform="rotate(-28 21 17)" fill="#FFB020" />
-      <ellipse cx="43" cy="17" rx="12" ry="6.5" transform="rotate(28 43 17)" fill="#FFB020" />
-      <path d="M32 22 L46 30 L46 48 L32 56 L18 48 L18 30 Z" fill="#FF8A1F" />
-      <rect x="18" y="35" width="28" height="4" fill="#0A0908" />
-      <rect x="18" y="44" width="28" height="4" fill="#0A0908" />
-    </svg>
+    <img
+      src="./swarm-mark.svg"
+      width={size}
+      height={Math.round(size * 0.468)}
+      alt=""
+      aria-hidden="true"
+    />
   );
 }
 
