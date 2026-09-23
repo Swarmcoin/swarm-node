@@ -280,7 +280,13 @@ export function MapView({ cfg, s, reducedMotion }) {
   }, [state, reducedMotion]);
 
   const nodes = state && state.data ? state.data.nodes : [];
-  const total = nodes.reduce((acc, n) => acc + n.count, 0);
+  // Two counts, never one. The published places are the swarm's; the operator's
+  // own city is theirs and nobody else's, and a badge that added them together
+  // would claim a network larger than the file does — the exact thing this map
+  // refuses to do.
+  const published = nodes.filter((n) => !n.mine);
+  const minePlace = nodes.find((n) => n.mine) || null;
+  const total = published.reduce((acc, n) => acc + n.count, 0);
   const when = stamp(state && state.data ? state.data.updated : null);
 
   // "How many bees" - a real figure or none at all.
@@ -311,7 +317,7 @@ export function MapView({ cfg, s, reducedMotion }) {
           <div className="swarmmap-pill">
             <span className="dot" />
             {state && state.data
-              ? `${nf.format(total)} ${total === 1 ? 'NODE' : 'NODES'}${when ? ' · UPDATED ' + when : ''}`
+              ? `${nf.format(total)} ${total === 1 ? 'NODE' : 'NODES'}${minePlace ? ' + YOUR CITY' : ''}${when ? ' · UPDATED ' + when : ''}`
               : busy ? 'LOADING…' : 'NO DATA'}
           </div>
           <div className="swarmmap-key"><span>FEW</span><i /><span>MANY</span></div>
@@ -321,12 +327,16 @@ export function MapView({ cfg, s, reducedMotion }) {
           <div>
             <div className="kicker">Nodes on the map</div>
             <div className="v">{state && state.data ? nf.format(total) : '—'}</div>
-            <div className="tiny dim">only those who asked to be listed</div>
+            <div className="tiny dim">
+              published, city level — only those who asked to be listed
+            </div>
           </div>
           <div>
             <div className="kicker">Cities</div>
-            <div className="v">{state && state.data ? nf.format(nodes.length) : '—'}</div>
-            <div className="tiny dim">city level, never finer</div>
+            <div className="v">{state && state.data ? nf.format(published.length) : '—'}</div>
+            <div className="tiny dim">
+              {minePlace ? `+ your city (${minePlace.city}), on this machine only` : 'city level, never finer'}
+            </div>
           </div>
           <div>
             <div className="kicker">{reach.label}</div>
@@ -338,7 +348,7 @@ export function MapView({ cfg, s, reducedMotion }) {
             <div className="v plain">{nodeRunning ? 'Connected' : 'Not running'}</div>
             <div className="tiny dim">
               {nodeRunning
-                ? `${localPeers == null ? 'no' : localPeers} peer${localPeers === 1 ? '' : 's'} · not on the map — listing is opt-in`
+                ? `${localPeers == null ? 'no' : localPeers} peer${localPeers === 1 ? '' : 's'} ${minePlace ? '· your city is on your map, not published' : '· not on the public map — listing is opt-in'}`
                 : 'start it on the Node page'}
             </div>
           </div>
