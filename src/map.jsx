@@ -6,9 +6,10 @@
 // process fetches the one allow-listed URL and hands the result over IPC, so
 // the renderer keeps connect-src 'none'.
 //
-// It draws only what the file says. Today that is one place, the project's own
-// seed node. There is no census service, so the map does not pretend to be a
-// count of the network, and there is no toggle that pretends to add you to it.
+// It draws only what the files say: the live census of nodes connected to the
+// seed right now (places, by city), falling back to the published list. There
+// is no toggle that pretends to add or remove anyone beyond actually
+// connecting or disconnecting a node.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Notice } from './ui.jsx';
@@ -288,6 +289,10 @@ export function MapView({ cfg, s, reducedMotion }) {
   const minePlace = nodes.find((n) => n.mine) || null;
   const total = published.reduce((acc, n) => acc + n.count, 0);
   const when = stamp(state && state.data ? state.data.updated : null);
+  const liveInfo = state && state.data && state.data.live ? state.data.live : null;
+  const pillText = liveInfo
+    ? `${nf.format(liveInfo.nodesOnline)} ${liveInfo.nodesOnline === 1 ? 'NODE ONLINE' : 'NODES ONLINE'}${liveInfo.stale ? ' · LIVE (STALE)' : ' · LIVE'}`
+    : (state && state.data ? `${nf.format(total)} ${total === 1 ? 'NODE' : 'NODES'}${minePlace ? ' + YOUR CITY' : ''}${when ? ' · UPDATED ' + when : ''}` : '');
 
   // "How many bees" - a real figure or none at all.
   //
@@ -317,7 +322,7 @@ export function MapView({ cfg, s, reducedMotion }) {
           <div className="swarmmap-pill">
             <span className="dot" />
             {state && state.data
-              ? `${nf.format(total)} ${total === 1 ? 'NODE' : 'NODES'}${minePlace ? ' + YOUR CITY' : ''}${when ? ' · UPDATED ' + when : ''}`
+              ? pillText
               : busy ? 'LOADING…' : 'NO DATA'}
           </div>
           <div className="swarmmap-key"><span>FEW</span><i /><span>MANY</span></div>
@@ -325,10 +330,10 @@ export function MapView({ cfg, s, reducedMotion }) {
 
         <div className="swarmmap-stats">
           <div>
-            <div className="kicker">Nodes on the map</div>
-            <div className="v">{state && state.data ? nf.format(total) : '—'}</div>
+            <div className="kicker">Nodes online</div>
+            <div className="v">{state && state.data ? (liveInfo ? nf.format(liveInfo.nodesOnline) : nf.format(total)) : '—'}</div>
             <div className="tiny dim">
-              published, city level — only those who asked to be listed
+              {liveInfo ? 'connected to the seed right now, city level' : 'published, city level — only those who asked to be listed'}
             </div>
           </div>
           <div>
@@ -348,7 +353,7 @@ export function MapView({ cfg, s, reducedMotion }) {
             <div className="v plain">{nodeRunning ? 'Connected' : 'Not running'}</div>
             <div className="tiny dim">
               {nodeRunning
-                ? `${localPeers == null ? 'no' : localPeers} peer${localPeers === 1 ? '' : 's'} ${minePlace ? '· your city is on your map, not published' : '· not on the public map — listing is opt-in'}`
+                ? `${localPeers == null ? 'no' : localPeers} peer${localPeers === 1 ? '' : 's'}${minePlace ? ' · marked with your city on this machine only' : ''}`
                 : 'start it on the Node page'}
             </div>
           </div>
@@ -363,15 +368,11 @@ export function MapView({ cfg, s, reducedMotion }) {
       {nodeRunning ? (
         <Notice kind="plain">
           <div>
-            <b>
-              {cfg && cfg.mapCity
-                ? 'Your city is on your map. The public map still lists only the cities the project has published.'
-                : 'Your node is running and is not on the public map. That is by design.'}
-            </b>
+            <b>Live means connected, not identified.</b>
             <div style={{ marginTop: 4 }}>
-              The map is an opt-in list of cities, not a count of the network. SWARM Node never
-              sends your location or your address anywhere, so nothing about your machine can
-              appear here unless you ask the project to add it.
+              The map shows every node connected to the seed, placed by city. Your node appears
+              while it is connected and disappears when it drops — and this app never sends your
+              location or your address anywhere, so the map has no idea who you are.
             </div>
           </div>
         </Notice>
