@@ -12,6 +12,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Notice } from './ui.jsx';
+import { CityOptIn } from './mapCityPanel.jsx';
 
 // The geometry is imported; the two vendor scripts are NOT.
 //
@@ -149,6 +150,45 @@ function draw(plot, nodes, reduceMotion) {
     }));
   }
   frag.appendChild(dots);
+
+  // Every place is NAMED on the map, not only on hover.
+  //
+  // The owner's report was that the locations were "still not showing up": a
+  // lone 2.6 px dot on a world map is a thing you can look straight past, and a
+  // tooltip needs a mouse to find. With a handful of places the names fit
+  // (they are drawn only while there are at most eight of them, so a busy map
+  // stays a heat map rather than a wall of text).
+  const labels = el('g');
+  if (points.length <= 8) {
+    for (const p of points) {
+      const name = p.node.city + (p.node.country ? ', ' + p.node.country : '');
+      const mine = !!p.node.mine;
+      const anchor = p.x > W - 120 ? 'end' : 'start';
+      const dx = anchor === 'end' ? -8 : 8;
+      labels.appendChild(textNode({
+        x: (p.x + dx).toFixed(1), y: (p.y + 3.2).toFixed(1), 'text-anchor': anchor,
+        fill: mine ? '#FFE0B0' : '#D9D1C4', 'font-family': 'JetBrains Mono, monospace',
+        'font-size': '10', 'paint-order': 'stroke', stroke: '#0A0908', 'stroke-width': '3',
+        'stroke-opacity': '.85'
+      }, mine ? `YOUR CITY - ${name}` : name));
+    }
+  }
+  frag.appendChild(labels);
+
+  // The operator's own city gets a dashed ring and a filled dot of its own, so
+  // "on this machine, not published" cannot be mistaken for a published place.
+  const mineDots = el('g');
+  for (const p of points.filter((q) => q.node.mine)) {
+    mineDots.appendChild(el('circle', {
+      cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: '9',
+      fill: 'none', stroke: '#FFE0B0', 'stroke-width': '1', 'stroke-dasharray': '3 2'
+    }));
+    mineDots.appendChild(el('circle', {
+      cx: p.x.toFixed(1), cy: p.y.toFixed(1), r: '3',
+      fill: '#FFE0B0', opacity: '.95'
+    }));
+  }
+  frag.appendChild(mineDots);
 
   const tip = el('g', { class: 'swarmmap-tip', 'aria-hidden': 'true', visibility: 'hidden' });
   const tipBox = el('rect', { x: '0', y: '0', rx: '8', ry: '8', height: '40', fill: '#100E0C', 'fill-opacity': '.96', stroke: '#FF8A1F', 'stroke-opacity': '.4' });
@@ -306,11 +346,18 @@ export function MapView({ cfg, s, reducedMotion }) {
       </div>
 
       {/* The exact question the owner asked: "I connected my node but it's
-          not showing." Answered on the page, next to the count. */}
+          not showing." Answered on the page, next to the count — and, since
+          2026-09-23, with something to do about it: the panel below puts the
+          operator's OWN city on their own map at once. */}
+      <CityOptIn cfg={cfg} onRefresh={load} />
       {nodeRunning ? (
         <Notice kind="plain">
           <div>
-            <b>Your node is running and is not on this map. That is by design.</b>
+            <b>
+              {cfg && cfg.mapCity
+                ? 'Your city is on your map. The public map still lists only the cities the project has published.'
+                : 'Your node is running and is not on the public map. That is by design.'}
+            </b>
             <div style={{ marginTop: 4 }}>
               The map is an opt-in list of cities, not a count of the network. SWARM Node never
               sends your location or your address anywhere, so nothing about your machine can

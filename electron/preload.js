@@ -54,7 +54,11 @@ contextBridge.exposeInMainWorld('shell', {
   openWallet: () => invoke('shell:openWallet'),
   chooseDataFolder: () => invoke('shell:chooseDataFolder'),
   getMapData: (force) => invoke('shell:getMapData', force === true),
-  getNetworkStatus: (force) => invoke('shell:getNetworkStatus', force === true)
+  getNetworkStatus: (force) => invoke('shell:getNetworkStatus', force === true),
+  // The operator's own city on the Swarm map. Kept on this machine; nothing is
+  // sent anywhere by either call.
+  setMapCity: (city) => invoke('shell:setMapCity', city),
+  clearMapCity: () => invoke('shell:clearMapCity')
 });
 
 // The code lock and signing out. Both were asked for by name by the owner; the

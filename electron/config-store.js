@@ -44,6 +44,12 @@ function defaults(manifest) {
     // install starts in.
     lockCode: null,
 
+    // The operator's own city, if they chose one on the Swarm map. City level
+    // only, kept on this machine, drawn on this machine's map and sent nowhere:
+    // see electron/map-city.js for the two things that are deliberately kept
+    // apart (this, and the published file the map actually shows).
+    mapCity: null,
+
     // Did this person ever FINISH the first-run wizard on this machine?
     //
     // The owner installed 0.2.0-testnet.2 and never saw the wizard. The old

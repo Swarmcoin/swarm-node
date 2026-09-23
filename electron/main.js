@@ -27,6 +27,7 @@ const { MapData } = require('./chain/map-data');
 const { NetworkStatus } = require('./chain/network-status');
 const { inspect: inspectAddress } = require('./chain/address-format');
 const L = require('./lock-code');
+const MC = require('./map-city');
 const V = require('./ipc-validate');
 
 // ---------------------------------------------------------------- identity
@@ -312,8 +313,32 @@ function registerIpc() {
   handle('shell:openDataFolder', () => shell.openPath(engine.dataDir));
   handle('shell:openLink', (url) => shell.openExternal(V.externalUrl(url, allowedHosts)));
   handle('shell:openWallet', () => openWallet());
-  handle('shell:getMapData', (force) => mapData.get({ force: V.bool(force === undefined ? false : force, 'refresh') }));
+  handle('shell:getMapData', async (force) => {
+    const result = await mapData.get({ force: V.bool(force === undefined ? false : force, 'refresh') });
+    // The operator's own city joins the published list HERE, so the page draws
+    // whatever it is handed and the merge exists in exactly one place
+    // (electron/map-city.js). Each place says whether it is published or theirs.
+    const mine = settings.data.mapCity || null;
+    if (!result.data) return { ...result, mine };
+    return { ...result, data: { ...result.data, nodes: MC.mergePlaces(result.data.nodes, mine) }, mine };
+  });
   handle('shell:getNetworkStatus', (force) => netStatus.get({ force: V.bool(force === undefined ? false : force, 'refresh') }));
+
+  // ---- the operator's own city on the Swarm map --------------------------
+  // Kept on this machine and drawn on this machine's map. Nothing is sent
+  // anywhere: the public map is a file the project publishes, and asking to be
+  // added to it is a message the operator sends themselves (the page builds it
+  // and copies it). See electron/map-city.js.
+  handle('shell:setMapCity', (value) => {
+    const checked = MC.validateCity(value);
+    if (!checked.ok) return checked;
+    settings.save({ mapCity: checked.city });
+    return { ok: true, city: checked.city };
+  });
+  handle('shell:clearMapCity', () => {
+    settings.save({ mapCity: null });
+    return { ok: true };
+  });
   handle('shell:chooseDataFolder', async () => {
     const r = await dialog.showOpenDialog(win, {
       title: 'Where should the chain be stored?',
