@@ -142,6 +142,18 @@ export function MiningView({ s, api }) {
       ) : null}
       {err ? <Notice kind="bad">{err}</Notice> : null}
 
+      <Notice kind="plain">
+        <div>
+          <b>You mine alone — there is no pool.</b>
+          <div style={{ marginTop: 4 }}>
+            Whichever machine finds the next valid block first gets that block’s full reward, paid
+            by the protocol straight to your payout address. A machine that just started can win
+            several blocks in a row — that is luck on a small number of blocks, not a preference.
+            Over time every miner earns in proportion to its share of the network’s total hash power.
+          </div>
+        </div>
+      </Notice>
+
       <div className="grid c4">
         <Metric
           label="Hash rate"
