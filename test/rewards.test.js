@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   RewardLedger, splitSubsidy, confirmations, isMature,
-  coinbasePaidTo, parseMinedLine, formatCoins, ZAT_PER_COIN
+  coinbasePaidTo, parseMinedLine, parseSolverRate, formatCoins, ZAT_PER_COIN
 } = require('../electron/chain/rewards');
 
 const RECIPIENTS = [
@@ -153,6 +153,23 @@ test('parseMinedLine ignores everything that is not an accepted block', () => {
   assert.strictEqual(parseMinedLine('successfully mined a new block height=Height(9) hash=block::Hash("' + 'a'.repeat(64) + '") success=Rejected'), null);
   assert.strictEqual(parseMinedLine(''), null);
   assert.strictEqual(parseMinedLine(null), null);
+});
+
+test('the solver rate is read from the line a miner printed, and never invented', () => {
+  const nodeLine = '2026-09-22T23:40:00.123456Z  INFO zebrad::components::miner: ' +
+    'internal miner rate: 1234 sol/s (attempts 12345 in 10.0s)';
+  assert.strictEqual(parseSolverRate(nodeLine), 1234);
+  assert.strictEqual(parseSolverRate('Mining rate 2.5k sol/s (attempts 25000 in 10.0s)'), 2500);
+  assert.strictEqual(parseSolverRate('Mining rate 1.5M sol/s'), 1500000);
+  assert.strictEqual(parseSolverRate('internal miner rate: 987.5 sol/s'), 987.5);
+
+  // No rate printed, no rate shown: a block, a template or a difficulty is not
+  // a measurement, and zero is not one either.
+  assert.strictEqual(parseSolverRate('successfully mined a new block height=Height(1480)'), null);
+  assert.strictEqual(parseSolverRate('internal miner rate: 0 sol/s (attempts 0 in 10.0s)'), null);
+  assert.strictEqual(parseSolverRate('mining with an updated block template height=1490 transactions=0'), null);
+  assert.strictEqual(parseSolverRate(''), null);
+  assert.strictEqual(parseSolverRate(null), null);
 });
 
 test('formatCoins never shows a float artefact', () => {

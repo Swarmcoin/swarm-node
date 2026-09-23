@@ -22,7 +22,12 @@ const { ZebraNode } = require('./zebrad');
 const { ZebraRpc } = require('./rpc');
 const { MinerPool } = require('./miner');
 const { SyncGate, tipAgeSeconds, REASON } = require('./sync-gate');
-const { RewardLedger, coinbasePaidTo, parseMinedLine, splitSubsidy } = require('./rewards');
+const { RewardLedger, coinbasePaidTo, parseMinedLine, parseSolverRate, splitSubsidy } = require('./rewards');
+
+// How long a solver rate the node reported stays usable. The miners report
+// every ten seconds while they are solving, so a minute-old reading means the
+// solver stopped; showing it as the current rate would be a lie.
+const SOLVER_RATE_MAX_AGE_MS = 60 * 1000;
 const { validateWithNode } = require('./address');
 const { machineCheck, canBindPort, freeEphemeralPort } = require('./hardware');
 const { requireBinary, loadBaseline } = require('./binaries');
@@ -128,6 +133,11 @@ class ChainEngine extends EventEmitter {
     this.scanFromHeight = null;
     this.scanCursor = null;
     this.benchmark = null;   // { solps, at, seconds } once the user runs one
+    // The last solver rate the NODE ITSELF reported, or null. The internal
+    // miner runs inside the node, so its rate arrives in the node's own log;
+    // a reading older than SOLVER_RATE_MAX_AGE_MS is dropped rather than shown
+    // as if it were current.
+    this.solverRate = null;
   }
 
   // ---------------------------------------------------------------- logging
@@ -496,6 +506,12 @@ class ChainEngine extends EventEmitter {
   }
 
   onNodeLine(line) {
+    // The node's own miner reports the rate its solver measured. That is the
+    // only rate the shielded engine can have: the solver runs inside the node
+    // process, so there is no child to read a rate from.
+    const rate = parseSolverRate(line);
+    if (rate != null) this.solverRate = { solps: rate, at: Date.now() };
+
     // Zebra's internal miner announces its own accepted blocks. That log line
     // is the only place the shielded miner reports anything: it exposes no
     // RPC and no metric.
@@ -1033,6 +1049,12 @@ class ChainEngine extends EventEmitter {
     const d = decision || this.evaluateGate();
     const totals = this.ledger.totals(Number.isInteger(this.chain.height) ? this.chain.height : 0);
     const poolSolps = this.pool ? this.pool.solps() : null;
+    // The shielded engine's rate comes from the node's own log, and only while
+    // it is fresh. A stale reading is dropped, never shown as current.
+    const nodeSolps = this.solverRate && Date.now() - this.solverRate.at <= SOLVER_RATE_MAX_AGE_MS
+      ? this.solverRate.solps
+      : null;
+    const solps = poolSolps != null ? poolSolps : nodeSolps;
 
     const snapshot = {
       network: {
@@ -1084,10 +1106,11 @@ class ChainEngine extends EventEmitter {
         idleOnly: this.settings.idleOnly === true,
         uptimeSec: this.mining.startedAt ? Math.floor((Date.now() - this.mining.startedAt) / 1000) : 0,
         // Sol/s is shown ONLY when something measured it. The standard miner
-        // reports its own rate when it prints one; the internal miner prints
-        // none at all, so this stays null and the UI shows "—".
-        solps: poolSolps,
-        solpsSource: poolSolps != null ? 'miner output' : null,
+        // reports its own rate on its own output; the node's internal miner
+        // reports the rate its solver measured, in the node's log. When neither
+        // exists this stays null and the UI shows "—".
+        solps,
+        solpsSource: poolSolps != null ? 'miner output' : nodeSolps != null ? 'node log' : null,
         benchmark: this.benchmark
       },
       gate: d,

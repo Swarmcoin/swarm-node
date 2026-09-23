@@ -233,6 +233,29 @@ function parseMinedLine(line) {
 }
 
 /**
+ * Parse a solver rate a SWARM miner measured itself.
+ *
+ * Both miners run the same Equihash solver and, since the rate work of
+ * 2026-09-22, both report it in the same shape:
+ *   ... internal miner rate: 1234 sol/s (attempts 123456 in 10.0s)
+ *   Mining rate 1234 sol/s (attempts 123456 in 10.0s)
+ *
+ * The number counted is how often the solver asked for its next nonce, so one
+ * unit is one real Equihash attempt. Nothing here estimates a rate from blocks
+ * found, difficulty or elapsed time: a rate appears only when a miner printed
+ * one, and zero is not a measurement.
+ */
+const SOLPS_LINE = /([0-9]+(?:\.[0-9]+)?)\s*(k|K|M)?\s*sol\/s/;
+
+function parseSolverRate(line) {
+  const m = SOLPS_LINE.exec(String(line || ''));
+  if (!m) return null;
+  const mult = m[2] === 'M' ? 1e6 : m[2] && m[2].toLowerCase() === 'k' ? 1e3 : 1;
+  const v = Number(m[1]) * mult;
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/**
  * Format zatoshi as a coin string: full precision, trailing zeros trimmed but
  * never below `minDecimals` places. 500000000 -> "5.00", 512345670 -> "5.1234567".
  */
@@ -253,6 +276,7 @@ module.exports = {
   isMature,
   coinbasePaidTo,
   parseMinedLine,
+  parseSolverRate,
   formatCoins,
   ZAT_PER_COIN
 };

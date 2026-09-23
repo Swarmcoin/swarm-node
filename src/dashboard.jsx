@@ -146,8 +146,12 @@ export function MiningView({ s, api }) {
           label="Hash rate"
           value={m.solps == null ? null : fmtSolps(m.solps)}
           detail={m.solps == null
-            ? (m.mode === 'shielded' ? 'The node’s internal miner reports no rate' : 'Not reported by the miner')
-            : `measured from ${m.solpsSource}`}
+            ? (m.mode === 'shielded'
+                ? 'the node’s own solver has not reported a rate yet'
+                : 'Not reported by the miner')
+            : (m.solpsSource === 'node log'
+                ? 'measured by the node’s own solver'
+                : `measured from ${m.solpsSource}`)}
           edge="var(--honey)"
         />
         <Metric
@@ -156,16 +160,37 @@ export function MiningView({ s, api }) {
           detail={s.rewards.shieldedBlocks ? `${s.rewards.transparentBlocks} transparent · ${s.rewards.shieldedBlocks} shielded` : 'by this machine'}
           edge="var(--orange)"
         />
+        {/* The two money tiles say what the engine that is running can prove.
+            A transparent coinbase output is on the chain, so its amount and
+            its 100-block maturity are facts. A shielded one is encrypted — from
+            NU6.3 the network pays shielded coinbase value into the Ironwood
+            pool — so the one figure this app can show is the miner's share of
+            each block the node's own log reported as accepted. That is shown,
+            labelled as credited, and never called a wallet balance: only the
+            wallet can see the note. Nothing is estimated, and a tile with
+            nothing behind it still says why. */}
         <Metric
           label={`Honey spendable (${s.network.ticker})`}
-          value={s.rewards.transparentBlocks ? fmtCoins(s.rewards.spendableZat, atomic) : null}
-          detail={s.rewards.transparentBlocks ? `${s.rewards.maturity}+ confirmations` : 'transparent mining only'}
+          value={s.rewards.transparentBlocks
+            ? fmtCoins(s.rewards.spendableZat, atomic)
+            : s.rewards.shieldedBlocks ? fmtCoins(s.rewards.shieldedSubsidyZat, atomic) : null}
+          detail={s.rewards.transparentBlocks
+            ? `${s.rewards.maturity}+ confirmations`
+            : s.rewards.shieldedBlocks
+              ? 'credited to your shielded address · your wallet shows the balance'
+              : 'nothing mined yet'}
           edge="var(--green)"
         />
         <Metric
           label={`Honey maturing (${s.network.ticker})`}
-          value={s.rewards.transparentBlocks ? fmtCoins(s.rewards.maturingZat, atomic) : null}
-          detail={s.rewards.nextMaturesInBlocks != null ? `next unlocks in ${s.rewards.nextMaturesInBlocks} blocks` : 'nothing waiting'}
+          value={s.rewards.transparentBlocks
+            ? fmtCoins(s.rewards.maturingZat, atomic)
+            : s.rewards.shieldedBlocks ? fmtCoins(0, atomic) : null}
+          detail={s.rewards.transparentBlocks
+            ? (s.rewards.nextMaturesInBlocks != null ? `next unlocks in ${s.rewards.nextMaturesInBlocks} blocks` : 'nothing waiting')
+            : s.rewards.shieldedBlocks
+              ? 'shielded rewards have no coinbase maturity rule'
+              : 'nothing waiting'}
           edge="var(--honey)"
         />
       </div>
@@ -418,14 +443,22 @@ export function RewardsView({ s }) {
         <Metric label="Blocks found" value={r.blocksFound} detail="by this machine, on this chain" edge="var(--orange)" />
         <Metric
           label={`Spendable (${s.network.ticker})`}
-          value={r.transparentBlocks ? fmtCoins(r.spendableZat, atomic) : null}
-          detail={`${r.maturity}+ confirmations`}
+          value={r.transparentBlocks
+            ? fmtCoins(r.spendableZat, atomic)
+            : r.shieldedBlocks ? fmtCoins(r.shieldedSubsidyZat, atomic) : null}
+          detail={r.transparentBlocks
+            ? `${r.maturity}+ confirmations`
+            : r.shieldedBlocks ? 'credited to your shielded address · your wallet shows the balance' : 'nothing mined yet'}
           edge="var(--green)"
         />
         <Metric
           label={`Maturing (${s.network.ticker})`}
-          value={r.transparentBlocks ? fmtCoins(r.maturingZat, atomic) : null}
-          detail={r.nextMaturesInBlocks != null ? `next unlocks in ${r.nextMaturesInBlocks} blocks` : 'nothing waiting'}
+          value={r.transparentBlocks
+            ? fmtCoins(r.maturingZat, atomic)
+            : r.shieldedBlocks ? fmtCoins(0, atomic) : null}
+          detail={r.transparentBlocks
+            ? (r.nextMaturesInBlocks != null ? `next unlocks in ${r.nextMaturesInBlocks} blocks` : 'nothing waiting')
+            : r.shieldedBlocks ? 'shielded rewards have no coinbase maturity rule' : 'nothing waiting'}
           edge="var(--honey)"
         />
       </div>
