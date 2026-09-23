@@ -37,33 +37,39 @@ const PROVENANCE = {
     role: 'the full node',
     repository: 'Swarm-Official/privacy-zebra',
     branch: 'swarm-ci',
-    commit: 'cb99dd063feaac493f93fdfca3e7d7acad685573',
+    commit: '95ccc1564b200d26609b203800f51509fbeec467',
     upstream_base: 'tag v6.3.0, the official Zcash Foundation release',
     changes_vs_upstream:
-      'one file added: .github/workflows/swarm-binaries.yml (CI only). ' +
-      'No Rust source, no Cargo.toml, no Cargo.lock.',
+      'one file added: .github/workflows/swarm-binaries.yml (CI only), plus one ' +
+      'non-consensus change to zebrad/src/components/miner.rs: the mining component ' +
+      'counts how often the solver asks for its next nonce and logs the rate it ' +
+      'measured ("internal miner rate: N sol/s") every ten seconds, because the node ' +
+      'reported no rate anywhere. No consensus, cryptographic, state or RPC code, no ' +
+      'Cargo.toml, no Cargo.lock.',
     build: 'cargo build --locked --release --package zebrad --bin zebrad --features internal-miner',
-    workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/35603263833',
-    built_at_utc: '2026-09-21T13:26:17Z'
+    workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/35800107349',
+    built_at_utc: '2026-09-23T00:08:50Z'
   },
   miner: {
     role: 'the standard (multi-core) mining engine',
     repository: 'Swarm-Official/privacy-zebra',
     branch: 'swarm-tools (macOS: swarm-tools-macos, same sources)',
-    commit: '103184e96b7f5fc5ae3fdeaec6a97a10612d2f0b',
+    commit: '7f82a03beceaf115ffcdf55ae30ae34c7abb4261',
     upstream_base:
       '7c64a8419388dd72664a19a70aed66e84f3e2d5b, a later upstream Zebra development ' +
       'commit 333 commits ahead of v6.3.0 - NOT the v6.3.0 release',
     changes_vs_upstream:
-      'four commits, seven files, all additions except Cargo.toml and Cargo.lock: ' +
+      'five commits, eight files, all additions except Cargo.toml and Cargo.lock: ' +
       'zebrad/src/bin/privacy-miner.rs, zebrad/src/bin/swarm-keytool.rs (not bundled), ' +
-      'two docs, and .github/workflows/swarm-tools.yml. No existing source file is modified. ' +
+      'two docs, and .github/workflows/swarm-tools.yml. The latest commit makes ' +
+      'privacy-miner print the rate its own solver measured ("Mining rate N sol/s") ' +
+      'every ten seconds. No source file other than privacy-miner.rs is modified. ' +
       'The macOS branch adds only the two Apple targets to that workflow.',
     build:
       'cargo build --locked --release --package zebrad --bin privacy-miner --bin swarm-keytool ' +
       '--features internal-miner',
-    workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/35626325459',
-    built_at_utc: '2026-09-21T16:40:14Z'
+    workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/35800186092',
+    built_at_utc: '2026-09-23T00:09:20Z'
   }
 };
 

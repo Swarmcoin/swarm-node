@@ -1,36 +1,36 @@
 {
   "_comment": "SHA-256 of the binaries each platform is allowed to run, and where each came from. Written by scripts/make-binaries-manifest.mjs. The node and the miner come from DIFFERENT upstream trees; see PROVENANCE.md beside this file.",
   "_note": "The node is v6.3.0; the miner is built from a tree 333 commits later. The miner is an RPC client: the node validates every block it accepts, so the node decides. Recorded, not smoothed over.",
-  "generated_at": "2026-09-22T13:05:36.364Z",
+  "generated_at": "2026-09-23T00:19:22.987Z",
   "platforms": {
     "win32-x64": {
       "zebrad": {
         "file": "swarm-node-daemon.exe",
-        "sha256": "b6ea39096b99debd64b248789d47c8a3a94afea5541e3a75f896b552ac61c477",
-        "bytes": 84311552,
+        "sha256": "8741ceee52a26f5a0390773188c0bd2961111b379973ecde881ab820b5076161",
+        "bytes": 84329472,
         "role": "the full node",
         "repository": "Swarm-Official/privacy-zebra",
         "branch": "swarm-ci",
-        "commit": "cb99dd063feaac493f93fdfca3e7d7acad685573",
+        "commit": "95ccc1564b200d26609b203800f51509fbeec467",
         "upstream_base": "tag v6.3.0, the official Zcash Foundation release",
-        "changes_vs_upstream": "one file added: .github/workflows/swarm-binaries.yml (CI only). No Rust source, no Cargo.toml, no Cargo.lock.",
+        "changes_vs_upstream": "one file added: .github/workflows/swarm-binaries.yml (CI only), plus one non-consensus change to zebrad/src/components/miner.rs: the mining component counts how often the solver asks for its next nonce and logs the rate it measured (\"internal miner rate: N sol/s\") every ten seconds, because the node reported no rate anywhere. No consensus, cryptographic, state or RPC code, no Cargo.toml, no Cargo.lock.",
         "build": "cargo build --locked --release --package zebrad --bin zebrad --features internal-miner",
-        "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35603263833",
-        "built_at_utc": "2026-09-21T13:26:17Z"
+        "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35800107349",
+        "built_at_utc": "2026-09-23T00:08:50Z"
       },
       "miner": {
         "file": "swarm-miner.exe",
-        "sha256": "e6e16810e5f01688a668d80d11be689c278d2df3b3c5d35d25667b668c35123a",
-        "bytes": 7673344,
+        "sha256": "2734b6b5663a82b2046c88e5875e6fa015d9b6ec3eba312d3b89409a8fc34646",
+        "bytes": 7672832,
         "role": "the standard (multi-core) mining engine",
         "repository": "Swarm-Official/privacy-zebra",
         "branch": "swarm-tools (macOS: swarm-tools-macos, same sources)",
-        "commit": "103184e96b7f5fc5ae3fdeaec6a97a10612d2f0b",
+        "commit": "7f82a03beceaf115ffcdf55ae30ae34c7abb4261",
         "upstream_base": "7c64a8419388dd72664a19a70aed66e84f3e2d5b, a later upstream Zebra development commit 333 commits ahead of v6.3.0 - NOT the v6.3.0 release",
-        "changes_vs_upstream": "four commits, seven files, all additions except Cargo.toml and Cargo.lock: zebrad/src/bin/privacy-miner.rs, zebrad/src/bin/swarm-keytool.rs (not bundled), two docs, and .github/workflows/swarm-tools.yml. No existing source file is modified. The macOS branch adds only the two Apple targets to that workflow.",
+        "changes_vs_upstream": "five commits, eight files, all additions except Cargo.toml and Cargo.lock: zebrad/src/bin/privacy-miner.rs, zebrad/src/bin/swarm-keytool.rs (not bundled), two docs, and .github/workflows/swarm-tools.yml. The latest commit makes privacy-miner print the rate its own solver measured (\"Mining rate N sol/s\") every ten seconds. No source file other than privacy-miner.rs is modified. The macOS branch adds only the two Apple targets to that workflow.",
         "build": "cargo build --locked --release --package zebrad --bin privacy-miner --bin swarm-keytool --features internal-miner",
-        "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35626325459",
-        "built_at_utc": "2026-09-21T16:40:14Z"
+        "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35800186092",
+        "built_at_utc": "2026-09-23T00:09:20Z"
       }
     }
   }

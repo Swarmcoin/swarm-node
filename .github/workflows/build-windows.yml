@@ -17,7 +17,7 @@ on:
       binaries_tag:
         description: 'Pre-release tag in this repo holding zebrad.exe and privacy-miner.exe'
         required: false
-        default: 'vendored-binaries-1'
+        default: 'vendored-binaries-2'
   push:
     branches: [main]
     paths-ignore: ['**/*.md']
@@ -74,7 +74,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.event.inputs.binaries_tag }}"
-          if (-not $tag) { $tag = "vendored-binaries-1" }
+          if (-not $tag) { $tag = "vendored-binaries-2" }
           New-Item -ItemType Directory -Force staging/bin | Out-Null
           gh release download $tag -R ${{ github.repository }} -p "zebrad.exe" -p "privacy-miner.exe" -D staging/bin
           Get-ChildItem -Recurse staging/bin | Select-Object FullName, Length
@@ -108,8 +108,8 @@ jobs:
           }
 
           $expected = @{
-            'zebrad.exe'        = 'b6ea39096b99debd64b248789d47c8a3a94afea5541e3a75f896b552ac61c477'
-            'privacy-miner.exe' = 'e6e16810e5f01688a668d80d11be689c278d2df3b3c5d35d25667b668c35123a'
+            'zebrad.exe'        = '8741ceee52a26f5a0390773188c0bd2961111b379973ecde881ab820b5076161'
+            'privacy-miner.exe' = '2734b6b5663a82b2046c88e5875e6fa015d9b6ec3eba312d3b89409a8fc34646'
           }
           foreach ($name in $expected.Keys) {
             $actual = (Get-FileHash "resources/bin/$name" -Algorithm SHA256).Hash.ToLower()
