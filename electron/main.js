@@ -17,7 +17,7 @@
 
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, clipboard, dialog, powerMonitor, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, clipboard, dialog, powerMonitor, session, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -26,6 +26,7 @@ const { SettingsStore } = require('./config-store');
 const { MapData } = require('./chain/map-data');
 const { NetworkStatus } = require('./chain/network-status');
 const { inspect: inspectAddress } = require('./chain/address-format');
+const L = require('./lock-code');
 const V = require('./ipc-validate');
 
 // ---------------------------------------------------------------- identity
@@ -321,6 +322,101 @@ function registerIpc() {
     });
     if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
     return engine.setDataDir(V.dataDir(r.filePaths[0]));
+  });
+
+  // ---- the code lock, and signing out ------------------------------------
+  // The owner asked for both by name: a LOCK that needs a code to come back in,
+  // and a SIGN OUT that signs out completely and starts the app from outside.
+  // The rules they follow are in specs/WALLET.md, section "Session: lock and
+  // sign out": the code is a session lock and not encryption, it is never
+  // recovered, it is compared here and never in the page, and wrong tries are
+  // throttled with the count kept per process.
+  const lockGate = L.createGate();
+
+  /** The record, decrypted. A damaged or missing one means "no code set". */
+  const readLockRecord = () => {
+    const stored = settings.data.lockCode;
+    if (!stored || typeof stored !== 'object') return null;
+    if (typeof stored.enc === 'string') {
+      try {
+        return JSON.parse(safeStorage.decryptString(Buffer.from(stored.enc, 'base64')));
+      } catch {
+        return null;
+      }
+    }
+    return L.isRecord(stored.record) ? stored.record : null;
+  };
+
+  /**
+   * Written through Electron's own encryption where this machine has it
+   * (DPAPI on Windows), so the settings file holds a blob rather than a hash a
+   * reader could take away and attack offline. Where there is no such store the
+   * record is written as it is, and the screen that sets the code says so,
+   * because the honest difference matters more than a uniform claim.
+   */
+  const writeLockRecord = (record) => {
+    try {
+      if (safeStorage.isEncryptionAvailable()) {
+        settings.save({ lockCode: { enc: safeStorage.encryptString(JSON.stringify(record)).toString('base64') } });
+        return { ok: true, encrypted: true };
+      }
+    } catch { /* fall through to the plain record */ }
+    settings.save({ lockCode: { record } });
+    return { ok: true, encrypted: false };
+  };
+
+  handle('lock:status', () => ({
+    hasCode: readLockRecord() !== null,
+    minLength: L.MIN_LENGTH,
+    maxLength: L.MAX_LENGTH,
+    freeAttempts: L.FREE_ATTEMPTS,
+    waitSeconds: lockGate.waitSeconds(),
+    encrypted: !!(settings.data.lockCode && typeof settings.data.lockCode.enc === 'string')
+  }));
+
+  handle('lock:set', (code, currentCode) => {
+    const shape = L.checkShape(code);
+    if (!shape.ok) return shape;
+    const existing = readLockRecord();
+    // Replacing a code, like removing one, needs the code that is there now.
+    // Neither can be done by somebody who merely happens to be at an unlocked
+    // window.
+    if (existing) {
+      const current = lockGate.verify(existing, currentCode);
+      if (!current.ok) return { ok: false, reason: current.reason, waitSeconds: current.waitSeconds };
+    }
+    const made = L.createRecord(shape.code);
+    if (!made.ok) return made;
+    const written = writeLockRecord(made.record);
+    lockGate.reset();
+    return written;
+  });
+
+  handle('lock:clear', (currentCode) => {
+    const existing = readLockRecord();
+    if (existing) {
+      const current = lockGate.verify(existing, currentCode);
+      if (!current.ok) return { ok: false, reason: current.reason, waitSeconds: current.waitSeconds };
+    }
+    settings.save({ lockCode: null });
+    lockGate.reset();
+    return { ok: true };
+  });
+
+  handle('lock:verify', (code) => lockGate.verify(readLockRecord(), code));
+
+  handle('session:signOut', async () => {
+    // The window closes and the application starts again from the outside.
+    // Signing out means the node and every miner are stopped the same way
+    // closing does — nothing is left running, and nothing is deleted: the
+    // chain, the payout address and the settings stay where they are.
+    if (!quitting) {
+      quitting = true;
+      await shutdown();
+    }
+    app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) });
+    app.exit(0);
+    return { ok: true };
   });
 }
 

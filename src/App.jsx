@@ -10,6 +10,7 @@ import { Welcome, Consent, Payout, MachineCheck } from './setup.jsx';
 import { MiningView, NodeView, RewardsView, SettingsView, LogView } from './dashboard.jsx';
 import { MapView } from './map.jsx';
 import { Tour } from './tour.jsx';
+import { LockScreen } from './lock.jsx';
 
 const TABS = [
   ['mining', 'Mining', 'mine'],
@@ -46,6 +47,14 @@ export default function App() {
   const [tab, setTab] = useState('mining');
   const [lines, setLines] = useState([]);
   const [tour, setTour] = useState(false);
+  // The code lock. `lockStatus` is what the main process says about it: whether
+  // a code is set, how long a wait is running, and whether the record could be
+  // kept encrypted. `locked` is this window's state.
+  const [lockStatus, setLockStatus] = useState(null);
+  const [locked, setLocked] = useState(false);
+  // Shown when Lock is pressed with no code set: locking without a way back in
+  // would put the controls behind a code nobody has.
+  const [lockHint, setLockHint] = useState('');
   const stopping = useRef(false);
 
   // ---- bridge ----
@@ -75,6 +84,26 @@ export default function App() {
       return r;
     },
     machineCheck: () => window.engine.machineCheck(),
+    // The owner asked for both of these by name on 2026-09-23: a Lock that asks
+    // for a code, and a Sign out that signs out completely and starts the app
+    // from outside. Locking needs something to unlock with, so with no code set
+    // this explains instead of locking the window behind a code nobody has.
+    lockNow: () => {
+      if (lockStatus && lockStatus.hasCode) {
+        setLockHint('');
+        setLocked(true);
+        return;
+      }
+      setTab('settings');
+      setLockHint('Set a code under Code lock first: locking needs something to unlock the window with.');
+    },
+    lockStatus: () => lockStatus,
+    // Called by the code settings after a code is set or removed, so the Lock
+    // button knows which of the two it is from then on.
+    refreshLockStatus: async () => {
+      setLockStatus(await window.sessionLock.status());
+    },
+    signOut: () => window.sessionLock.signOut(),
     chooseDataFolder: async () => {
       const r = await window.shell.chooseDataFolder();
       setCfg(await window.shell.getConfig());
@@ -96,6 +125,13 @@ export default function App() {
       setCfg(c);
       setState(s);
       setLines(l || []);
+      // Whether a code is set is asked of the main process, which owns both the
+      // record and the count of wrong tries. A code that is set means this
+      // window opens locked, the same as it does after pressing Lock.
+      const lock = await window.sessionLock.status();
+      if (!live) return;
+      setLockStatus(lock);
+      setLocked(!!(lock && lock.hasCode));
       // Review hook: #shot=<screen> puts one screen on top so the capture
       // tool can photograph each in turn. It changes nothing else — the data
       // on the screen is whatever the engine really reports.
@@ -184,6 +220,20 @@ export default function App() {
     );
   }
 
+  // ---- the lock, before anything else -------------------------------------
+  // A locked window shows the lock screen and nothing of the dashboard: not the
+  // balances, not the log, not the settings. Signing out is offered from here
+  // too, because a code nobody remembers must not leave somebody stuck.
+  if (locked) {
+    return (
+      <LockScreen
+        status={lockStatus}
+        onUnlock={() => setLocked(false)}
+        onSignOut={() => window.sessionLock.signOut()}
+      />
+    );
+  }
+
   // ---- dashboard ----
   const n = state.node;
   const m = state.mining;
@@ -214,6 +264,26 @@ export default function App() {
 
         <div className="rail-foot">
           <button className="btn danger" disabled={!running} onClick={stopEverything}>■  Stop everything</button>
+          {/*
+            The two controls the owner asked for by name: Lock puts this window
+            behind the code, Sign out stops the node and every miner and starts
+            the app again from the outside. Both are also in Settings, and the
+            Lock button says what to set first when no code exists yet.
+          */}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn sm" onClick={api.lockNow} title="Lock the app — your code is asked for again">
+              Lock
+            </button>
+            <div className="spacer" />
+            <button
+              className="btn sm"
+              onClick={() => window.sessionLock.signOut()}
+              title="Sign out — stops the node and the miner, then starts the app again"
+            >
+              Sign out
+            </button>
+          </div>
+          {lockHint ? <div className="tiny" style={{ color: 'var(--warn, #e8b23a)', marginTop: 8 }}>{lockHint}</div> : null}
           <div className="tiny dim">Closing this window stops the node and the miner too.</div>
         </div>
       </aside>

@@ -56,3 +56,17 @@ contextBridge.exposeInMainWorld('shell', {
   getMapData: (force) => invoke('shell:getMapData', force === true),
   getNetworkStatus: (force) => invoke('shell:getNetworkStatus', force === true)
 });
+
+// The code lock and signing out. Both were asked for by name by the owner; the
+// rules they follow are in specs/WALLET.md ("Session: lock and sign out"). The
+// code is compared in the main process — this bridge cannot see the stored
+// record, only ask whether a code is set and hand one over to be checked.
+contextBridge.exposeInMainWorld('sessionLock', {
+  status: () => invoke('lock:status'),
+  set: (code, currentCode) => invoke('lock:set', code, currentCode),
+  clear: (currentCode) => invoke('lock:clear', currentCode),
+  verify: (code) => invoke('lock:verify', code),
+  // Signs out completely: the node and the miner are stopped, and the
+  // application starts again as a new process.
+  signOut: () => invoke('session:signOut')
+});

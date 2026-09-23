@@ -142,6 +142,19 @@ a { color: var(--orange); }
 
 .rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-sm); }
 
+/* The lock screen: the whole window, so nothing of the dashboard shows behind
+   it. The code field, the Unlock button and Sign out live on the card. */
+.lock-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-xl);
+}
+
+.lock-card { width: 100%; max-width: 460px; }
+
+
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
   display: flex; align-items: center; gap: var(--sp-md);

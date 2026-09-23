@@ -1,9 +1,11 @@
 // Persisted settings.
 //
 // What is stored: the consent flag, the payout ADDRESS (a public identifier),
-// and the machine's own preferences. What is never stored, because it never
-// exists in this app: a key, a seed phrase, a password, an email address, or
-// any account of any kind.
+// the machine's own preferences, and — since the owner asked for a lock — the
+// record for the wallet code: a random salt and a scrypt-derived key, never the
+// code itself, and encrypted with the operating system's own store where this
+// machine has one. What is still never stored, because it never exists in this
+// app: a key, a seed phrase, an account, an email address or a password.
 
 'use strict';
 
@@ -36,6 +38,11 @@ function defaults(manifest) {
     stopTimeoutMs: 20000,
     reducedMotion: false,
     setupStep: 'welcome',
+
+    // The record for the wallet code: a salt and a derived key, or an encrypted
+    // blob holding them. null means no code is set, which is the state every
+    // install starts in.
+    lockCode: null,
 
     // Did this person ever FINISH the first-run wizard on this machine?
     //

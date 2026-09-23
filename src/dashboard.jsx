@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Pill, Metric, Notice, Switch, fmtCoins, fmtBytes, fmtDuration, fmtAge, fmtSolps, shortHash } from './ui.jsx';
+import { CodeLockSettings } from './lock.jsx';
 
 // ---------------------------------------------------------------- mining
 export function MiningView({ s, api }) {
@@ -549,7 +550,10 @@ export function SettingsView({ s, cfg, api }) {
 
       <div className="card">
         <h3>Payout address</h3>
-        <p className="small muted">The only thing this app stores about you. Change it any time; the node restarts to pick it up.</p>
+        <p className="small muted">
+          The only thing this app keeps about you besides the lock you may set: your payout address, which is a
+          public identifier. Change it any time; the node restarts to pick it up.
+        </p>
         <input type="text" spellCheck={false} value={addr} onChange={(e) => setAddr(e.target.value)} />
         <div className="row" style={{ marginTop: 12 }}>
           {/* The answer this screen just got, in preference to the state
@@ -590,6 +594,24 @@ export function SettingsView({ s, cfg, api }) {
           <div style={{ marginTop: 10 }}><Notice kind="ok">Saved. Your node confirmed it.</Notice></div>
         ) : null}
       </div>
+
+      <div className="card">
+        <h3>Lock and sign out</h3>
+        <p className="small muted" style={{ marginBottom: 0 }}>
+          Lock puts this window behind your code. Sign out stops the node and every miner and starts the
+          application again from the outside — nothing is deleted, and your address and chain data stay put.
+        </p>
+        <div className="row" style={{ marginTop: 12 }}>
+          <button className="btn sm" onClick={() => api.lockNow()}>Lock now</button>
+          <button className="btn sm" onClick={() => window.sessionLock.signOut()}>Sign out</button>
+        </div>
+      </div>
+
+      <CodeLockSettings
+        onNotice={async () => {
+          if (api.refreshLockStatus) await api.refreshLockStatus();
+        }}
+      />
 
       <div className="card">
         <h3>First node of a new network</h3>
