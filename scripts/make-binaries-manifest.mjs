@@ -73,6 +73,24 @@ const PROVENANCE = {
   }
 };
 
+// Native Intel builds are identified by the bytes CI verified.
+const VERIFIED_BUILDS = {
+  "da0ce4ae58c7fb2a15f78afe93c83f6b1a52553dd32bfe598d19ad03f704f165": {
+    "branch": "codex/intel-node-ci",
+    "commit": "cda4bc3ec2dd04a07c2460b025739a03e76fc9ca",
+    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35909765579",
+    "built_at_utc": "2026-09-23T19:51:58Z",
+    "target": "x86_64-apple-darwin"
+  },
+  "e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68": {
+    "branch": "codex/intel-miner-ci",
+    "commit": "75da596ea680011c24230e558d78f9c70221bcf2",
+    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35909770301",
+    "built_at_utc": "2026-09-23T19:56:07Z",
+    "target": "x86_64-apple-darwin"
+  }
+};
+
 // The shipped names. The upstream names are accepted as a fallback so a
 // developer checkout with raw binaries still works; whichever file is found,
 // the pin is recorded under the name that actually ships.
@@ -136,9 +154,10 @@ for (const [name, spec] of Object.entries(WANT)) {
   }
   const buf = fs.readFileSync(p);
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
-  mine[name] = { file: spec.file, sha256, bytes: buf.length, ...PROVENANCE[name] };
+  const provenance = { ...PROVENANCE[name], ...VERIFIED_BUILDS[sha256] };
+  mine[name] = { file: spec.file, sha256, bytes: buf.length, ...provenance };
   console.log(`${name.padEnd(7)} ${spec.file.padEnd(20)} ${sha256}  ${buf.length} bytes`);
-  console.log(`        ${PROVENANCE[name].branch} @ ${PROVENANCE[name].commit.slice(0, 12)}`);
+  console.log(`        ${provenance.branch} @ ${provenance.commit.slice(0, 12)}`);
 }
 
 if (missingRequired) process.exit(1);
