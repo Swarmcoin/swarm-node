@@ -33,94 +33,57 @@ permissions:
   actions: read
 
 jobs:
+  select-platforms:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.result }}
+    steps:
+      - uses: actions/github-script@v7
+        id: select
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'all' }}
+        with:
+          script: |
+            const rows = [{"key":"linux-x64","runs-on":"ubuntu-22.04","builder":"--linux","node_asset":"zebrad-linux-x64","miner_asset":"privacy-miner-linux-x64","node_sha":"17c5297c4f4fda72982f1d6c2e4f4682ea434390e87639108eaa0f9912948ffe","miner_sha":"740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6","expect":"x86_64|amd64","arch":"x64"},{"key":"darwin-arm64","runs-on":"macos-14","builder":"--mac --arm64","node_asset":"zebrad-darwin-arm64","miner_asset":"privacy-miner-darwin-arm64","node_sha":"102b6ec3e6c8bee6ffcbce3c595ff31149ddf8b389aaed4ce065e76eee32ef38","miner_sha":"b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a","expect":"mac-arm64","arch":"arm64"},{"key":"darwin-x64","runs-on":"macos-15-intel","builder":"--mac --x64","node_asset":"zebrad-darwin-x64","miner_asset":"privacy-miner-darwin-x64","node_sha":"PENDING","miner_sha":"PENDING","expect":"mac-x64","arch":"x64"}];
+            const aliases = {linux: 'linux-x64', 'mac-arm64': 'darwin-arm64', 'mac-x64': 'darwin-x64'};
+            const requested = process.env.PLATFORMS;
+            if (requested !== 'all' && !aliases[requested]) throw new Error(`Unknown platform: ${requested}`);
+            const selected = rows.filter(row => requested === 'all' || row.key === aliases[requested]);
+            const ready = selected.filter(row => /^[a-f0-9]{64}$/.test(row.node_sha) && /^[a-f0-9]{64}$/.test(row.miner_sha));
+            if (requested !== 'all' && ready.length !== selected.length) throw new Error(`Binary hashes are missing for ${requested}`);
+            if (!ready.length) throw new Error('No platforms have verified binary hashes');
+            for (const row of selected.filter(row => !ready.includes(row))) core.notice(`Skipping ${row.key}: binary hashes pending`);
+            return {include: ready};
   build:
+    needs: select-platforms
     strategy:
       # One platform failing must not cancel the others: a macOS runner being
       # scarce is not a reason to lose a good Linux package.
       fail-fast: false
-      matrix:
-        include:
-          - key: linux-x64
-            runs-on: ubuntu-22.04
-            builder: --linux
-            node_asset: zebrad-linux-x64
-            miner_asset: privacy-miner-linux-x64
-            node_sha: 17c5297c4f4fda72982f1d6c2e4f4682ea434390e87639108eaa0f9912948ffe
-            miner_sha: 740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6
-            expect: 'x86_64|amd64'
-            arch: x64
-          - key: darwin-arm64
-            runs-on: macos-14
-            builder: --mac --arm64
-            node_asset: zebrad-darwin-arm64
-            miner_asset: privacy-miner-darwin-arm64
-            node_sha: 102b6ec3e6c8bee6ffcbce3c595ff31149ddf8b389aaed4ce065e76eee32ef38
-            miner_sha: b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a
-            expect: 'mac-arm64'
-            arch: arm64
-          - key: darwin-x64
-            runs-on: macos-13
-            builder: --mac --x64
-            node_asset: zebrad-darwin-x64
-            miner_asset: privacy-miner-darwin-x64
-            node_sha: PENDING
-            miner_sha: PENDING
-            expect: 'mac-x64'
-            arch: x64
+      matrix: ${{ fromJSON(needs.select-platforms.outputs.matrix) }}
 
     name: ${{ matrix.key }}
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 60
 
     steps:
-      - name: Is this platform asked for, and are its binaries built yet?
-        id: want
-        shell: bash
-        run: |
-          set -euo pipefail
-          want='${{ github.event.inputs.platforms }}'
-          [ -n "$want" ] || want=all
-          key='${{ matrix.key }}'
-          run_it=no
-          case "$want" in
-            all) run_it=yes ;;
-            linux) [ "$key" = linux-x64 ] && run_it=yes ;;
-            mac-arm64) [ "$key" = darwin-arm64 ] && run_it=yes ;;
-            mac-x64) [ "$key" = darwin-x64 ] && run_it=yes ;;
-          esac
-          # A platform whose pinned hashes are not known yet cannot be built
-          # honestly, so it is SKIPPED rather than built without a pin. This is
-          # a guard: it never fails a run. (A guard that fails the build was
-          # exactly the mistake in run 35684893551.)
-          if [ '${{ matrix.node_sha }}' = PENDING ] || [ '${{ matrix.miner_sha }}' = PENDING ]; then
-            echo "::notice::${key} has no pinned binary hashes yet, so it is skipped."
-            run_it=no
-          fi
-          echo "run=$run_it" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
-        if: steps.want.outputs.run == 'yes'
 
       - uses: actions/setup-node@v4
-        if: steps.want.outputs.run == 'yes'
         with:
           node-version: '22'
           cache: npm
 
       - name: Install dependencies
-        if: steps.want.outputs.run == 'yes'
         run: npm ci
 
       - name: Lint
-        if: steps.want.outputs.run == 'yes'
         run: npm run lint
 
       - name: String sweep (source)
-        if: steps.want.outputs.run == 'yes'
         run: npm run sweep
 
       - name: Unit tests
-        if: steps.want.outputs.run == 'yes'
         run: npm test
 
       # ---- the two binaries this app runs -------------------------------
@@ -130,7 +93,6 @@ jobs:
       # because a private repo's token cannot read another repository's
       # workflow artifacts. The SHA-256 gate below is what actually decides.
       - name: Download the pinned binaries
-        if: steps.want.outputs.run == 'yes'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -144,7 +106,6 @@ jobs:
           ls -l staging
 
       - name: Verify and place the binaries
-        if: steps.want.outputs.run == 'yes'
         shell: bash
         run: |
           set -euo pipefail
@@ -172,15 +133,12 @@ jobs:
           done
 
       - name: Record the binary hashes this build may run
-        if: steps.want.outputs.run == 'yes'
         run: node scripts/make-binaries-manifest.mjs
 
       - name: Build the renderer
-        if: steps.want.outputs.run == 'yes'
         run: npm run build:ui
 
       - name: Build the packages
-        if: steps.want.outputs.run == 'yes'
         run: npx electron-builder ${{ matrix.builder }} --publish never
 
       # A NAME IS NOT EVIDENCE. This reads the Electron executable and both
@@ -188,7 +146,6 @@ jobs:
       # build unless every one of them really is this job's architecture.
       # A package named mac-x64 carrying arm64 binaries reached a draft once.
       - name: Every binary must really be this architecture
-        if: steps.want.outputs.run == 'yes'
         shell: bash
         run: |
           set -euo pipefail
@@ -202,7 +159,6 @@ jobs:
           scripts/check-arch.sh "$dir" '${{ matrix.arch }}'
 
       - name: String sweep (packaged app.asar)
-        if: steps.want.outputs.run == 'yes'
         shell: bash
         run: |
           set -euo pipefail
@@ -215,7 +171,6 @@ jobs:
       # runner, so the whole thing runs under a virtual one; the app's window
       # is never shown either way (SWARM_NODE_HEADLESS).
       - name: Renderer smoke test
-        if: steps.want.outputs.run == 'yes'
         shell: bash
         run: |
           set -euo pipefail
@@ -235,7 +190,6 @@ jobs:
         timeout-minutes: 10
 
       - name: Checksums and release manifest
-        if: steps.want.outputs.run == 'yes'
         shell: bash
         run: |
           set -euo pipefail
@@ -284,7 +238,6 @@ jobs:
       # Windows workflow clears the draft first; this one must not, or the
       # second platform to finish would wipe the first.
       - name: Add this platform's files to the draft release
-        if: steps.want.outputs.run == 'yes'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
