@@ -29,6 +29,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const { ChainEngine } = require(path.join(ROOT, 'electron/chain/engine.js'));
 const { ZebraRpc } = require(path.join(ROOT, 'electron/chain/rpc.js'));
+const { validateWithNode } = require(path.join(ROOT, 'electron/chain/address.js'));
 const { requireBinary } = require(path.join(ROOT, 'electron/chain/binaries.js'));
 const { isAlive } = require(path.join(ROOT, 'electron/chain/graceful-stop.js'));
 const { generateZebraConfig } = require(path.join(ROOT, 'electron/chain/config-gen.js'));
@@ -38,7 +39,9 @@ const { splitSubsidy } = require(path.join(ROOT, 'electron/chain/rewards.js'));
 // zebra-rpc/src/config/mining.rs at v6.3.0. Nobody holds its keys and the coins
 // are worthless; it exists so the shielded path can be exercised without any
 // wallet, key or seed being involved.
-const UNIFIED = 'utest10a8k6aw5w33kvyt7x6fryzu7vvsjru5vgcfnvr288qx2zm6p63ygcajtaze0px08t583dyrgr42vasazjhhnntus2tqrpkzu0dm2l4cgf3ld6wdqdrf3jv8mvfx9c80e73syer9l2wlgawjtf7yvj0eqwdf354trtelxnr0fhpw9792eaf49ghstkyftc9lwqqwy4ye0cleagp4nzyt';
+const LEGACY_UNIFIED = 'utest10a8k6aw5w33kvyt7x6fryzu7vvsjru5vgcfnvr288qx2zm6p63ygcajtaze0px08t583dyrgr42vasazjhhnntus2tqrpkzu0dm2l4cgf3ld6wdqdrf3jv8mvfx9c80e73syer9l2wlgawjtf7yvj0eqwdf354trtelxnr0fhpw9792eaf49ghstkyftc9lwqqwy4ye0cleagp4nzyt';
+// The same Orchard receiver, canonically encoded by the reviewed wallet SDK.
+const UNIFIED = 'swarm1dcteu5tyyxt4uvpkhz3gf2kms7rayaw8wr4v300uwng6emwxrls438uu2nky5f8c7macj9fjxhtlar3q7jajshqsv7jve6krku6r6tc9';
 
 // Zebra's own documented default Testnet TRANSPARENT miner address, from
 // zebra-rpc/src/config/mining.rs at v6.3.0. Worthless coins on a throwaway
@@ -177,8 +180,16 @@ async function main() {
     const bad = await engine.setPayoutAddress('tmNotARealAddressAtAll123456');
     check('6  the node rejects an invalid address', bad.ok === false, bad.error);
 
+    const legacy = await validateWithNode(rpc, LEGACY_UNIFIED);
+    check('6a the node accepts the legacy unified address', legacy.ok === true && legacy.confirmed === true && legacy.kind === 'unified');
+    const [oldReceivers, newReceivers] = await Promise.all([
+      rpc.call('z_listunifiedreceivers', [LEGACY_UNIFIED]),
+      rpc.call('z_listunifiedreceivers', [UNIFIED])
+    ]);
+    check('6a2 legacy and SWARM addresses have the same Orchard receiver',
+      !!oldReceivers.orchard && oldReceivers.orchard === newReceivers.orchard);
     const good = await engine.setPayoutAddress(UNIFIED);
-    check('6b the node identifies the unified address', good.ok === true && good.kind === 'unified', good.kind || good.error);
+    check('6b the node identifies the unified address', good.ok === true && good.confirmed === true && good.kind === 'unified', good.kind || good.error);
     check('6c a unified address allows shielded mining only', JSON.stringify(good.modes) === JSON.stringify(['shielded']), JSON.stringify(good.modes));
 
     // A unified address must NOT be accepted for the transparent engine.
@@ -264,14 +275,24 @@ async function main() {
     check('8g the node states the miner share as 80% of the subsidy', false, 'no blocks were mined');
   }
 
-  // Sol/s must be "—", not an invented figure: the internal miner reports none.
-  check('8j hash rate is unknown rather than invented for the internal miner', state.mining.solps === null);
+  const measuredRates = logLines.flatMap(({ text }) => {
+    const sample = text.match(/internal miner rate: ([0-9.]+) sol\/s/);
+    return sample ? [Number(sample[1])] : [];
+  });
+  check('8j displayed hash rate comes from the internal miner log',
+    state.mining.solps === null
+      ? state.mining.solpsSource === null
+      : state.mining.solpsSource === 'node log' && measuredRates.includes(state.mining.solps));
 
   // --- 9. auto-pause when the gate closes ----------------------------------
   {
     engine.gate.setFirstNode(false);
     engine.settings.autoResume = false;
-    await engine.tick();
+    const pauseDeadline = Date.now() + 120000;
+    while (engine.mining.on && Date.now() < pauseDeadline) {
+      await engine.tick();
+      if (engine.mining.on) await sleep(1500);
+    }
     check('9  mining pauses by itself when the gate closes', engine.mining.on === false && engine.mining.pausedByGate === true);
     engine.gate.setFirstNode(true);
   }

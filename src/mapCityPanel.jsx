@@ -91,11 +91,10 @@ export function CityOptIn({ cfg, onChanged, onRefresh }) {
 
   return (
     <div className="card">
-      <h3>Your city on the map</h3>
+      <h3>Your local city marker</h3>
       <p className="small muted" style={{ marginBottom: 0 }}>
-        The public map is a file the project publishes, and it lists cities only where the operator
-        asked to be listed. Choose your city here and it appears on <b>your</b> map straight away —
-        {mine ? ' it is not published anywhere yet.' : ' nothing is sent anywhere by choosing it.'}
+        The live map groups connections to the seed by approximate city. You can also choose a city
+        marker for this device. Choosing it saves a local preference and leaves the live count unchanged.
       </p>
 
       {mine ? (
@@ -106,7 +105,7 @@ export function CityOptIn({ cfg, onChanged, onRefresh }) {
             {!findCity(mine.city, mine.country) ? <span className="dim"> · not from the built-in list</span> : null}
           </span>
           <div className="spacer" />
-          <button className="btn sm" onClick={askToPublish} disabled={busy}>Ask the project to publish it</button>
+          <button className="btn sm" onClick={askToPublish} disabled={busy}>Request a fallback listing</button>
           <button className="btn sm danger" onClick={remove} disabled={busy}>Remove</button>
         </div>
       ) : (
@@ -157,8 +156,8 @@ export function CityOptIn({ cfg, onChanged, onRefresh }) {
       ) : null}
 
       <p className="small muted" style={{ marginBottom: 0, marginTop: 10 }}>
-        City level, never finer. SWARM Node never sends your location, your address or which city you
-        looked at anywhere — not to the project, not to a geocoding service.
+        The city picker works locally. The seed estimates cities from peer IP addresses;
+        the public map shows aggregated city counts.
       </p>
       <a className="tiny dim" href={CONTACT} onClick={(e) => { e.preventDefault(); window.shell.openLink(CONTACT); }}>
         Contact the project

@@ -1,22 +1,24 @@
 {
   "_comment": "SHA-256 of the binaries each platform is allowed to run, and where each came from. Written by scripts/make-binaries-manifest.mjs. The node and the miner come from DIFFERENT upstream trees; see PROVENANCE.md beside this file.",
   "_note": "The node is v6.3.0; the miner is built from a tree 333 commits later. The miner is an RPC client: the node validates every block it accepts, so the node decides. Recorded, not smoothed over.",
-  "generated_at": "2026-09-23T00:19:22.987Z",
+  "generated_at": "2026-09-24T01:39:58.094Z",
   "platforms": {
     "win32-x64": {
       "zebrad": {
         "file": "swarm-node-daemon.exe",
-        "sha256": "8741ceee52a26f5a0390773188c0bd2961111b379973ecde881ab820b5076161",
-        "bytes": 84329472,
+        "sha256": "a26d4ba503b986f1671ef4fd695476ab181e747c67983d0215cddc4eed0d6bc3",
+        "bytes": 84327424,
         "role": "the full node",
         "repository": "Swarm-Official/privacy-zebra",
-        "branch": "swarm-ci",
-        "commit": "95ccc1564b200d26609b203800f51509fbeec467",
+        "branch": "codex/swarm-prefix-node",
+        "commit": "c4e0a4b3772ab81c2c73a183d837ac3ce2ea7c05",
         "upstream_base": "tag v6.3.0, the official Zcash Foundation release",
-        "changes_vs_upstream": "one file added: .github/workflows/swarm-binaries.yml (CI only), plus one non-consensus change to zebrad/src/components/miner.rs: the mining component counts how often the solver asks for its next nonce and logs the rate it measured (\"internal miner rate: N sol/s\") every ten seconds, because the node reported no rate anywhere. No consensus, cryptographic, state or RPC code, no Cargo.toml, no Cargo.lock.",
+        "changes_vs_upstream": "SWARM build workflows and measured internal-miner rate logging; vendored zcash_protocol 0.10.1 and zcash_address 0.13.0 encode SWARM testnet unified addresses/viewing keys and accept legacy testnet forms. Cargo manifests and lockfile pin the local crates. Receiver bytes and consensus rules are unchanged. Address compatibility tests run on every target.",
         "build": "cargo build --locked --release --package zebrad --bin zebrad --features internal-miner",
-        "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35800107349",
-        "built_at_utc": "2026-09-23T00:08:50Z"
+        "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35938556704",
+        "built_at_utc": "2026-09-24T00:57:07Z",
+        "target": "x86_64-pc-windows-msvc",
+        "binary": "zebrad"
       },
       "miner": {
         "file": "swarm-miner.exe",

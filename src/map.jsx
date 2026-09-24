@@ -335,7 +335,7 @@ export function MapView({ cfg, s, reducedMotion }) {
       <div className="swarmmap">
         <div className="swarmmap-frame">
           <svg ref={plotRef} viewBox={`0 0 ${W} ${H}`} className="swarmmap-plot" role="img"
-               aria-label="World map of the places where SWARM nodes have chosen to be listed" />
+               aria-label="World map of SWARM node locations by city" />
           <div className="swarmmap-pill">
             <span className="dot" />
             {state && state.data
@@ -385,11 +385,11 @@ export function MapView({ cfg, s, reducedMotion }) {
       {nodeRunning ? (
         <Notice kind="plain">
           <div>
-            <b>Live means connected, not identified.</b>
+            <b>Live connections, grouped by city.</b>
             <div style={{ marginTop: 4 }}>
-              The map shows every node connected to the seed, placed by city. Your node appears
-              while it is connected and disappears when it drops — and this app never sends your
-              location or your address anywhere, so the map has no idea who you are.
+              The seed groups its current peer connections by approximate city using their network IP addresses.
+              Your connection appears while it is active. The public feed contains city counts;
+              it omits individual IP addresses and wallet addresses.
             </div>
           </div>
         </Notice>

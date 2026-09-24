@@ -90,3 +90,12 @@ test('nothing here throws on rubbish input', () => {
     assert.strictEqual(inspect(bad).looksValid, false);
   }
 });
+
+test('SWARM unified addresses select shielded mining and reject mixed case', () => {
+  const address = 'swarm12flymdvahre66el73vpyej6nva55s0lhxhp97ujv7k0vrhgvdgmsfp2xtccadctpqaku2uvw8jqm4w5py66mml9yxf600eluzumd473r';
+  const inspected = inspect(address);
+  assert.strictEqual(inspected.looksValid, true);
+  assert.strictEqual(inspected.kind, 'unified');
+  assert.strictEqual(inspected.mode, 'shielded');
+  assert.strictEqual(inspect(address.replace('swarm', 'SwarM')).looksValid, false);
+});

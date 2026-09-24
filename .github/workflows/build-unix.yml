@@ -22,7 +22,7 @@ on:
       binaries_tag:
         description: 'Pre-release tag holding the pinned node and miner'
         required: false
-        default: 'vendored-binaries-1'
+        default: 'vendored-binaries-prefix-1'
       platforms:
         description: 'Which to build: all, linux, mac-arm64, mac-x64'
         required: false
@@ -44,7 +44,7 @@ jobs:
           PLATFORMS: ${{ inputs.platforms || 'all' }}
         with:
           script: |
-            const rows = [{"key":"linux-x64","runs-on":"ubuntu-22.04","builder":"--linux","node_asset":"zebrad-linux-x64","miner_asset":"privacy-miner-linux-x64","node_sha":"17c5297c4f4fda72982f1d6c2e4f4682ea434390e87639108eaa0f9912948ffe","miner_sha":"740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6","expect":"x86_64|amd64","arch":"x64"},{"key":"darwin-arm64","runs-on":"macos-14","builder":"--mac --arm64","node_asset":"zebrad-darwin-arm64","miner_asset":"privacy-miner-darwin-arm64","node_sha":"102b6ec3e6c8bee6ffcbce3c595ff31149ddf8b389aaed4ce065e76eee32ef38","miner_sha":"b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a","expect":"mac-arm64","arch":"arm64"},{"key":"darwin-x64","runs-on":"macos-15-intel","builder":"--mac --x64","node_asset":"zebrad-darwin-x64","miner_asset":"privacy-miner-darwin-x64","node_sha":"da0ce4ae58c7fb2a15f78afe93c83f6b1a52553dd32bfe598d19ad03f704f165","miner_sha":"e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68","expect":"mac-x64","arch":"x64"}];
+            const rows = [{"key":"linux-x64","runs-on":"ubuntu-22.04","builder":"--linux","node_asset":"zebrad-linux-x64","miner_asset":"privacy-miner-linux-x64","node_sha":"f0a809f6aa8671e7b47c1557d4c524293d9c0e7871648812f6383dc37dfd0896","miner_sha":"740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6","expect":"x86_64|amd64","arch":"x64"},{"key":"darwin-arm64","runs-on":"macos-14","builder":"--mac --arm64","node_asset":"zebrad-darwin-arm64","miner_asset":"privacy-miner-darwin-arm64","node_sha":"61a2333ff660aa55f4351f88654bc4ad9f6041b65b0bf5349cd57d95e25160cb","miner_sha":"b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a","expect":"mac-arm64","arch":"arm64"},{"key":"darwin-x64","runs-on":"macos-15-intel","builder":"--mac --x64","node_asset":"zebrad-darwin-x64","miner_asset":"privacy-miner-darwin-x64","node_sha":"486cfa2fb459427386705ae7bde05b172e58ae3fa794dd73d36dbd2d31f88748","miner_sha":"e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68","expect":"mac-x64","arch":"x64"}];
             const aliases = {linux: 'linux-x64', 'mac-arm64': 'darwin-arm64', 'mac-x64': 'darwin-x64'};
             const requested = process.env.PLATFORMS;
             if (requested !== 'all' && !aliases[requested]) throw new Error(`Unknown platform: ${requested}`);
@@ -99,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           tag='${{ github.event.inputs.binaries_tag }}'
-          [ -n "$tag" ] || tag=vendored-binaries-1
+          [ -n "$tag" ] || tag=vendored-binaries-prefix-1
           mkdir -p resources/bin
           gh release download "$tag" -R '${{ github.repository }}' \
             -p '${{ matrix.node_asset }}' -p '${{ matrix.miner_asset }}' -D staging
@@ -235,8 +235,7 @@ jobs:
       #
       # Each platform adds ITS OWN files to the one draft for this version and
       # never deletes anybody else's, because three jobs share the tag. The
-      # Windows workflow clears the draft first; this one must not, or the
-      # second platform to finish would wipe the first.
+      # Windows workflow follows the same rule; completion order is irrelevant.
       - name: Add this platform's files to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -257,14 +256,15 @@ jobs:
           else
             gh release create "$tag" -R '${{ github.repository }}' --draft --prerelease \
               --title "SWARM Node $version (draft — not published)" \
-              --notes "**NOT AUDITED AND NOT PUBLISHED.** A draft build for review."
+              --notes "**NOT AUDITED AND NOT PUBLISHED.** A draft build for review." || \
+              gh release view "$tag" -R '${{ github.repository }}' >/dev/null
           fi
           gh release upload "$tag" -R '${{ github.repository }}' --clobber out/*
           echo "draft release: https://github.com/${{ github.repository }}/releases/tag/$tag"
 
       - name: Keep the smoke screenshots as evidence
         uses: actions/upload-artifact@v4
-        if: always() && steps.want.outputs.run == 'yes'
+        if: always()
         continue-on-error: true
         with:
           name: smoke-${{ matrix.key }}

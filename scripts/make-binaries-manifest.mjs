@@ -14,10 +14,8 @@
 // committed file accumulates all three and an auditor can see the lot.
 //
 // Provenance lives HERE rather than in the JSON, because CI regenerates the
-// JSON on every build and would otherwise overwrite it. An earlier note
-// claimed both programs were "official Zebra 6.3.0 with no source changes",
-// which is true of the node and not of the miner. Prose version, with the full
-// file lists: electron/net/PROVENANCE.md
+// JSON on every build and would otherwise overwrite it. Both programs carry
+// reviewed SWARM changes, documented in electron/net/PROVENANCE.md.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,19 +34,17 @@ const PROVENANCE = {
   zebrad: {
     role: 'the full node',
     repository: 'Swarm-Official/privacy-zebra',
-    branch: 'swarm-ci',
-    commit: '95ccc1564b200d26609b203800f51509fbeec467',
+    branch: 'codex/swarm-prefix-node',
+    commit: 'c4e0a4b3772ab81c2c73a183d837ac3ce2ea7c05',
     upstream_base: 'tag v6.3.0, the official Zcash Foundation release',
     changes_vs_upstream:
-      'one file added: .github/workflows/swarm-binaries.yml (CI only), plus one ' +
-      'non-consensus change to zebrad/src/components/miner.rs: the mining component ' +
-      'counts how often the solver asks for its next nonce and logs the rate it ' +
-      'measured ("internal miner rate: N sol/s") every ten seconds, because the node ' +
-      'reported no rate anywhere. No consensus, cryptographic, state or RPC code, no ' +
-      'Cargo.toml, no Cargo.lock.',
+      'SWARM build workflows and measured internal-miner rate logging; vendored ' +
+      'zcash_protocol 0.10.1 and zcash_address 0.13.0 encode SWARM testnet unified ' +
+      'addresses/viewing keys and accept legacy testnet forms. Cargo manifests ' +
+      'and lockfile pin the local crates. Receiver bytes and consensus rules ' +
+      'are unchanged. Address compatibility tests run on every target.',
     build: 'cargo build --locked --release --package zebrad --bin zebrad --features internal-miner',
-    workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/35800107349',
-    built_at_utc: '2026-09-23T00:08:50Z'
+    workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/35938556704'
   },
   miner: {
     role: 'the standard (multi-core) mining engine',
@@ -73,21 +69,38 @@ const PROVENANCE = {
   }
 };
 
-// Native Intel builds are identified by the bytes CI verified.
+// Platform builds are identified by the bytes CI verified.
 const VERIFIED_BUILDS = {
-  "da0ce4ae58c7fb2a15f78afe93c83f6b1a52553dd32bfe598d19ad03f704f165": {
-    "branch": "codex/intel-node-ci",
-    "commit": "cda4bc3ec2dd04a07c2460b025739a03e76fc9ca",
-    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35909765579",
-    "built_at_utc": "2026-09-23T19:51:58Z",
-    "target": "x86_64-apple-darwin"
-  },
   "e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68": {
     "branch": "codex/intel-miner-ci",
     "commit": "75da596ea680011c24230e558d78f9c70221bcf2",
     "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35909770301",
     "built_at_utc": "2026-09-23T19:56:07Z",
     "target": "x86_64-apple-darwin"
+  },
+  "61a2333ff660aa55f4351f88654bc4ad9f6041b65b0bf5349cd57d95e25160cb": {
+    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35938556704",
+    "built_at_utc": "2026-09-24T00:49:42Z",
+    "target": "aarch64-apple-darwin",
+    "binary": "zebrad"
+  },
+  "a26d4ba503b986f1671ef4fd695476ab181e747c67983d0215cddc4eed0d6bc3": {
+    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35938556704",
+    "built_at_utc": "2026-09-24T00:57:07Z",
+    "target": "x86_64-pc-windows-msvc",
+    "binary": "zebrad"
+  },
+  "f0a809f6aa8671e7b47c1557d4c524293d9c0e7871648812f6383dc37dfd0896": {
+    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35938556704",
+    "built_at_utc": "2026-09-24T00:49:03Z",
+    "target": "x86_64-unknown-linux-gnu",
+    "binary": "zebrad"
+  },
+  "486cfa2fb459427386705ae7bde05b172e58ae3fa794dd73d36dbd2d31f88748": {
+    "workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/35938556704",
+    "built_at_utc": "2026-09-24T01:36:55Z",
+    "target": "x86_64-apple-darwin",
+    "binary": "zebrad"
   }
 };
 
@@ -154,6 +167,9 @@ for (const [name, spec] of Object.entries(WANT)) {
   }
   const buf = fs.readFileSync(p);
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+  if (name === 'zebrad' && VERIFIED_BUILDS[sha256]?.binary !== 'zebrad') {
+    throw new Error(`Unreviewed node binary: ${sha256}`);
+  }
   const provenance = { ...PROVENANCE[name], ...VERIFIED_BUILDS[sha256] };
   mine[name] = { file: spec.file, sha256, bytes: buf.length, ...provenance };
   console.log(`${name.padEnd(7)} ${spec.file.padEnd(20)} ${sha256}  ${buf.length} bytes`);

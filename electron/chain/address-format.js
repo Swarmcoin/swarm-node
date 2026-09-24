@@ -15,7 +15,7 @@
 //
 // What is checked here:
 //   tm… / t2…  Base58Check transparent addresses, 35 characters, no 0OIl
-//   utest1…    Bech32m unified addresses, lower case, no 1bio
+//   swarm1… / utest1…  Bech32m unified addresses, lower case, no 1bio
 // Anything else is "not a SWARM address", which is a shape statement, not a
 // validity one, and the message says so.
 
@@ -64,11 +64,11 @@ function inspect(raw) {
   }
   // Other transparent prefixes exist on other networks and are a common mistake.
   if (/^t[1-9a-zA-Z]/.test(s)) {
-    return no('That looks like an address for a different network. A SWARM testnet address starts tm… or utest1….');
+    return no('That looks like an address for a different network. A SWARM testnet address starts tm…, swarm1… or utest1….');
   }
 
-  // Unified: utest1 on testnet.
-  if (/^utest1/i.test(s)) {
+  // Current and legacy unified-address prefixes.
+  if (/^(swarm|utest)1/i.test(s)) {
     if (s !== s.toLowerCase()) return no('A unified address is all lower case. Check the copy.');
     const data = s.slice(6);
     if (!data) return no('That unified address is cut short.');
@@ -77,10 +77,10 @@ function inspect(raw) {
     return { looksValid: true, ...KINDS.unified, hint: null };
   }
   if (/^u1/i.test(s)) {
-    return no('That is a mainnet unified address. SWARM is a testnet, so its addresses start utest1….');
+    return no('That is a mainnet unified address. SWARM is a testnet, so its addresses start swarm1… or utest1….');
   }
   if (/^z/i.test(s)) {
-    return no('That is a shielded Sapling address. Neither mining mode can pay to one; use a tm… or utest1… address.');
+    return no('That is a shielded Sapling address. Neither mining mode can pay to one; use a tm…, swarm1… or utest1… address.');
   }
 
   return no('That does not look like a SWARM address. Copy a receive address from the SWARM Wallet.');

@@ -17,7 +17,7 @@ on:
       binaries_tag:
         description: 'Pre-release tag in this repo holding zebrad.exe and privacy-miner.exe'
         required: false
-        default: 'vendored-binaries-2'
+        default: 'vendored-binaries-prefix-1'
   push:
     branches: [main]
     paths-ignore: ['**/*.md']
@@ -55,8 +55,8 @@ jobs:
 
       # ---- the two binaries this app runs -------------------------------
       #
-      # Both are built in Swarm-Official/privacy-zebra from official Zebra 6.3.0
-      # source with no source changes. They are fetched rather than rebuilt, so
+      # Both are built in Swarm-Official/privacy-zebra from reviewed SWARM forks.
+      # Their exact source revisions are recorded in electron/net/PROVENANCE.md. They are fetched rather than rebuilt, so
       # the thing that ships is the thing that was tested.
       #
       # They come from a PRE-RELEASE of THIS private repository, not from the
@@ -74,7 +74,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.event.inputs.binaries_tag }}"
-          if (-not $tag) { $tag = "vendored-binaries-2" }
+          if (-not $tag) { $tag = "vendored-binaries-prefix-1" }
           New-Item -ItemType Directory -Force staging/bin | Out-Null
           gh release download $tag -R ${{ github.repository }} -p "zebrad.exe" -p "privacy-miner.exe" -D staging/bin
           Get-ChildItem -Recurse staging/bin | Select-Object FullName, Length
@@ -108,7 +108,7 @@ jobs:
           }
 
           $expected = @{
-            'zebrad.exe'        = '8741ceee52a26f5a0390773188c0bd2961111b379973ecde881ab820b5076161'
+            'zebrad.exe'        = 'a26d4ba503b986f1671ef4fd695476ab181e747c67983d0215cddc4eed0d6bc3'
             'privacy-miner.exe' = '2734b6b5663a82b2046c88e5875e6fa015d9b6ec3eba312d3b89409a8fc34646'
           }
           foreach ($name in $expected.Keys) {
@@ -296,13 +296,14 @@ jobs:
           # Actions pwsh wrapper turns the step's last exit code into the step's
           # result. That made this guard FAIL the build instead of skipping the
           # release — run 35684893551. A guard must never fail anything.
-          gh release view $tag -R ${{ github.repository }} --json tagName 2>$null | Out-Null
+          $release = gh release view $tag -R ${{ github.repository }} --json assets 2>$null
           $exists = $LASTEXITCODE -eq 0
           $global:LASTEXITCODE = 0
 
-          $touch = $manual -or (-not $exists)
-          if ($exists -and -not $manual) {
-            Write-Host "::notice::$tag already exists and this run was not started by hand, so its assets are left alone. Bump the version for a new draft, or dispatch the workflow to replace this one."
+          $hasWindows = $exists -and (($release | ConvertFrom-Json).assets.name -contains 'release-manifest.json')
+          $touch = $manual -or (-not $hasWindows)
+          if ($hasWindows -and -not $manual) {
+            Write-Host "::notice::$tag already has a Windows build. Bump the version for a new draft, or dispatch the workflow to replace its Windows assets."
           }
           "touch=$($touch.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           exit 0
@@ -317,12 +318,9 @@ jobs:
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = "build-$version"
           $existing = gh release view $tag -R ${{ github.repository }} --json tagName 2>$null
-          # Clear any asset a previous run left behind, so the draft always
-          # holds exactly this build's four files and nothing else.
-          if ($existing) {
-            $old = gh release view $tag -R ${{ github.repository }} --json assets -q '.assets[].name' 2>$null
-            foreach ($a in $old) { if ($a) { gh release delete-asset $tag $a -R ${{ github.repository }} --yes 2>$null } }
-          }
+          # Upload replaces only this job's named assets. Unix builds share
+          # the draft and their packages and manifests must remain intact.
+          $global:LASTEXITCODE = 0
 
           # The release text is DERIVED FROM release-manifest.json, never from
           # the variables of whichever run happened to create the release. The
@@ -369,11 +367,17 @@ jobs:
           if (-not $existing) {
             gh release create $tag -R ${{ github.repository }} --draft --prerelease `
               --title "SWARM Node $version (draft — not published)" --notes-file $notesFile
-          } else {
-            gh release edit $tag -R ${{ github.repository }} `
-              --title "SWARM Node $version (draft — not published)" --notes-file $notesFile
+            if ($LASTEXITCODE -ne 0) {
+              # Another platform may have created the shared draft first.
+              gh release view $tag -R ${{ github.repository }} --json tagName | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "Could not create or find $tag" }
+            }
           }
+          gh release edit $tag -R ${{ github.repository }} `
+            --title "SWARM Node $version (draft — not published)" --notes-file $notesFile
+          if ($LASTEXITCODE -ne 0) { throw "Could not update $tag release notes" }
           gh release upload $tag -R ${{ github.repository }} --clobber (Get-ChildItem out -File | ForEach-Object { $_.FullName })
+          if ($LASTEXITCODE -ne 0) { throw "Could not upload Windows assets to $tag" }
           Write-Host "draft release: https://github.com/${{ github.repository }}/releases/tag/$tag"
 
       # Secondary, and allowed to fail: the same files as a workflow artifact.

@@ -233,9 +233,9 @@ export function MiningView({ s, api }) {
           {s.payout.kind === 'transparent'
             ? <>Your address is a transparent <span className="mono">tm…</span> one, so Standard is
               available and Shielded is not. Shielded needs a unified{' '}
-              <span className="mono">utest…</span> address — paste one in Settings to use it.</>
+              <span className="mono">swarm1… or utest1…</span> address — paste one in Settings to use it.</>
             : s.payout.kind === 'unified'
-              ? <>Your address is a unified <span className="mono">utest…</span> one, so Shielded is
+              ? <>Your address is a unified <span className="mono">swarm1… or utest1…</span> one, so Shielded is
                 available and Standard is not. Standard pays a transparent{' '}
                 <span className="mono">tm…</span> address — paste one in Settings to use it.</>
               : <>Neither engine is available until you paste a payout address in Settings.</>}
@@ -245,7 +245,7 @@ export function MiningView({ s, api }) {
           <div style={{ marginTop: 12 }}>
             <Notice kind="plain">
               Standard mining is not in this build yet: the separate miner program is not bundled.
-              Shielded mining works now and needs a <span className="mono">utest…</span> address.
+              Shielded mining works now and needs a <span className="mono">swarm1… or utest1…</span> address.
             </Notice>
           </div>
         ) : null}

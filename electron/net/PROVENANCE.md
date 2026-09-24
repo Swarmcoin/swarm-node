@@ -1,51 +1,41 @@
-# Where the two bundled programs come from
+# Bundled node and mining engine provenance
 
-SWARM Node runs two third-party executables. Neither is built here: both are
-built in `Swarm-Official/privacy-zebra` by GitHub Actions, downloaded by this
-app's build workflow, and refused at run time unless their SHA-256 matches
-`binaries.json`.
+The build downloads reviewed binaries and verifies their SHA-256 before
+packaging. The application checks the recorded hashes before starting them.
+The node and standard miner come from separate upstream revisions.
 
-They come from **two different upstream trees**. That is stated first because
-an earlier version of this note said both were "official Zebra 6.3.0 source
-with no source changes", which is true of one and not the other.
+## `swarm-node-daemon` — the node
 
----
+Source: `Swarm-Official/privacy-zebra`, branch `codex/swarm-prefix-node`,
+commit `c4e0a4b3772ab81c2c73a183d837ac3ce2ea7c05`, based on Zebra `v6.3.0`.
+[Native build and compatibility tests](https://github.com/Swarm-Official/privacy-zebra/actions/runs/35938556704).
 
-## `zebrad.exe` — the node
+Build command: `cargo build --locked --release --package zebrad --bin zebrad --features internal-miner`.
+Each platform's build manifest records its Rust toolchain and build time.
 
-| | |
-| --- | --- |
-| SHA-256 | `8741ceee52a26f5a0390773188c0bd2961111b379973ecde881ab820b5076161` |
-| Repository | `Swarm-Official/privacy-zebra` |
-| Branch | `swarm-ci` |
-| Commit | `95ccc1564b200d26609b203800f51509fbeec467` |
-| Upstream base | tag **`v6.3.0`** — the official Zcash Foundation release |
-| Build | `cargo build --locked --release --package zebrad --bin zebrad --features internal-miner` |
-| Toolchain | rustc 1.91.0 (f8297e351, 2025-10-28), x86_64-pc-windows-msvc |
-| Workflow run | https://github.com/Swarm-Official/privacy-zebra/actions/runs/35800107349 |
-| Built | 2026-09-23T00:08:50Z |
+| Target | Binary SHA-256 | Built at UTC |
+| --- | --- | --- |
+| `aarch64-apple-darwin` | `61a2333ff660aa55f4351f88654bc4ad9f6041b65b0bf5349cd57d95e25160cb` | 2026-09-24T00:49:42Z |
+| `x86_64-pc-windows-msvc` | `a26d4ba503b986f1671ef4fd695476ab181e747c67983d0215cddc4eed0d6bc3` | 2026-09-24T00:57:07Z |
+| `x86_64-unknown-linux-gnu` | `f0a809f6aa8671e7b47c1557d4c524293d9c0e7871648812f6383dc37dfd0896` | 2026-09-24T00:49:03Z |
+| `x86_64-apple-darwin` | `486cfa2fb459427386705ae7bde05b172e58ae3fa794dd73d36dbd2d31f88748` | 2026-09-24T01:36:55Z |
 
-**What the branch changes relative to `v6.3.0`: one file added, one file changed.**
+The reviewed changes relative to the upstream release are:
 
-```
-added     .github/workflows/swarm-binaries.yml        a build workflow (CI only)
-modified  zebrad/src/components/miner.rs              the mining component
-```
+- SWARM build workflows, build documentation and changelog entries.
+- Internal-miner rate reporting in `zebrad/src/components/miner.rs`.
+- Vendored `zcash_protocol` 0.10.1 and `zcash_address` 0.13.0, selected through
+  the workspace manifest and lockfile. Unified testnet addresses and viewing
+  keys encode with `swarm`, `uviewswarm` and `uivkswarm`; decoding also accepts
+  their corresponding legacy testnet forms. Encoded receiver bytes retain
+  their existing meaning. Transparent, Sapling, TEX, mainnet and regtest
+  prefixes retain their existing definitions.
+- Mining-address compatibility regression tests in
+  `zebra-rpc/src/config/mining.rs`, run for every native target.
 
-The change to `miner.rs` is not consensus code and cannot alter which blocks are
-produced, accepted or stored. The solver asks for its next nonce through the
-miner's own cancellation closure, so the component counts those calls — one call
-is one Equihash attempt — and logs the rate it measured, in the shape the
-standalone miner uses:
-
-```
-internal miner rate: 1234 sol/s (attempts 12345 in 10.0s)
-```
-
-It exists because the node reported no rate anywhere at all, so a node app had
-nothing honest to show for a machine mining with the internal miner. Before this
-commit the branch added only the workflow. No `Cargo.toml`, no `Cargo.lock`, no
-consensus, cryptographic, state or RPC code.
+Consensus rules, proof verification, key derivation and chain state formats
+retain their upstream behavior. The standard miner below retains its existing
+source and binary pins.
 
 ---
 
@@ -94,14 +84,14 @@ bundled**: it creates spending keys, which a miner has no business carrying.
 
 ## The thing worth noticing
 
-The node is built from the official **`v6.3.0`** release. The miner is built
+The node is built from the reviewed SWARM fork of **`v6.3.0`**. The miner is built
 from a tree **333 commits later**. So the miner's copy of Zebra's block-builder
 and solver is newer than the node's.
 
 In practice the miner is an RPC client: it asks the node for a block template
 over `getblocktemplate`, solves it, and hands the result back through
 `submitblock`. The node validates everything it accepts, so the node's rules —
-the `v6.3.0` ones — are what decide. A version difference here cannot make the
+the inherited `v6.3.0` consensus rules — are what decide. A version difference here cannot make the
 node accept a block it would otherwise reject.
 
 It is still a difference, and it is recorded here rather than smoothed over.
