@@ -12,7 +12,9 @@ module.exports = {
   mac: {
     ...base.mac,
     target: [{ target: "dmg", arch: ["arm64"] }, { target: "zip", arch: ["arm64"] }],
-    identity: developerIdIdentity(),
+    // electron-builder selects the Developer ID certificate type itself and
+    // rejects the "Developer ID Application:" prefix in an explicit identity.
+    identity: developerIdIdentity().replace(/^Developer ID Application:\s*/, ""),
     hardenedRuntime: true,
     gatekeeperAssess: true,
     entitlements: "./configs/entitlements.mac.plist",
