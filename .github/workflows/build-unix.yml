@@ -19,6 +19,10 @@ name: Build Linux and macOS packages
 on:
   workflow_dispatch:
     inputs:
+      verify_signed_intel:
+        description: 'Verify the published signed Intel DMG on an Intel Mac'
+        type: boolean
+        default: false
       binaries_tag:
         description: 'Pre-release tag holding the pinned node and miner'
         required: false
@@ -34,6 +38,7 @@ permissions:
 
 jobs:
   select-platforms:
+    if: ${{ !inputs.verify_signed_intel }}
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.select.outputs.result }}
@@ -282,3 +287,42 @@ jobs:
           name: smoke-${{ matrix.key }}
           path: smoke
           retention-days: 7
+
+  verify-signed-intel:
+    if: ${{ inputs.verify_signed_intel }}
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download the published signed Intel packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p signed-intel
+          gh release download swarm-node-0.2.0-testnet.7 \
+            --repo Swarm-Official/swarm-releases \
+            --pattern 'SWARM-Node-0.2.0-testnet.7-mac-x64.*' \
+            --pattern 'SHA256SUMS-mac-x64' --dir signed-intel
+          cd signed-intel
+          shasum -a 256 -c SHA256SUMS-mac-x64
+      - name: Verify Gatekeeper and launch the exact signed DMG app
+        run: |
+          set -euo pipefail
+          dmg=signed-intel/SWARM-Node-0.2.0-testnet.7-mac-x64.dmg
+          hdiutil verify "$dmg"
+          xcrun stapler validate "$dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint /Volumes/SWARM-Node-Intel-Verify "$dmg"
+          app='/Volumes/SWARM-Node-Intel-Verify/SWARM Node.app'
+          bash scripts/check-arch.sh /Volumes/SWARM-Node-Intel-Verify x64
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          node scripts/smoke-renderer.mjs "$app/Contents/MacOS" signed-intel/smoke
+          ditto -x -k signed-intel/SWARM-Node-0.2.0-testnet.7-mac-x64.zip signed-intel/zip-app
+          codesign --verify --deep --strict 'signed-intel/zip-app/SWARM Node.app'
+      - name: Detach the test image
+        if: always()
+        run: hdiutil detach /Volumes/SWARM-Node-Intel-Verify || true
