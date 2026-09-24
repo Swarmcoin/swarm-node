@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { validate, MAP_URL } = require('../electron/chain/map-data');
+const { MapData, validate, validateLive, MAP_URL } = require('../electron/chain/map-data');
 
 const LIVE = {
   updated: '2026-09-21T17:23:00Z',
@@ -71,4 +71,39 @@ test('an empty but well-formed file is fine: the map simply has nothing on it', 
 
 test('a bad date becomes null rather than a wrong "updated" claim', () => {
   assert.strictEqual(validate({ updated: 'whenever', nodes: [] }).data.updated, null);
+});
+
+function census(generated = Date.now() / 1000) {
+  return validateLive({ live: true, generated_unix: generated, nodes_online: 3,
+    places: [{ city: 'Dallas', country: 'US', lon: -96.8, lat: 32.78, count: 1 },
+      { city: 'Santo Domingo', country: 'DO', lon: -69.94, lat: 18.46, count: 2 }] });
+}
+
+test('first map response waits for the live census instead of returning only the static seed', async () => {
+  const map = new MapData('unused-test-cache');
+  map.cached = { data: validate(LIVE).data, fetchedAt: Date.now() };
+  map.liveInFlight = new Promise((resolve) => setTimeout(() => {
+    map.live = census().data;
+    map.liveFetchedAt = Date.now();
+    resolve();
+  }, 10));
+  const result = await map.get();
+  assert.equal(result.data.live.nodesOnline, 3);
+  assert.equal(result.data.nodes.length, 2);
+});
+
+test('a recently fetched but old census is stale according to its generation time', async () => {
+  const map = new MapData('unused-test-cache');
+  map.cached = { data: validate(LIVE).data, fetchedAt: Date.now() };
+  map.live = census((Date.now() - 240000) / 1000).data;
+  map.liveFetchedAt = Date.now();
+  const result = await map.get();
+  assert.equal(result.data.live.stale, true);
+  assert.ok(result.data.live.ageMs >= 240000);
+});
+
+test('a census without a credible timestamp cannot be labelled live', () => {
+  for (const value of [undefined, null, 'invalid', -1, (Date.now() + 120000) / 1000]) {
+    assert.equal(census(value === undefined ? NaN : value).ok, false);
+  }
 });

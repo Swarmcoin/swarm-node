@@ -253,22 +253,39 @@ export function MapView({ cfg, s, reducedMotion }) {
 
   async function load(force) {
     setBusy(true);
-    const [r, n] = await Promise.all([
-      window.shell.getMapData(force === true),
-      window.shell.getNetworkStatus(force === true)
-    ]);
-    setState(r);
-    setNet(n);
-    setBusy(false);
+    try {
+      const [r, n] = await Promise.all([
+        window.shell.getMapData(force === true),
+        window.shell.getNetworkStatus(force === true)
+      ]);
+      setState(r);
+      setNet(n);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  useEffect(() => { load(false); }, []);
-  // The seed's figure moves; re-read it while the page is open.
   useEffect(() => {
-    const t = setInterval(() => {
-      window.shell.getNetworkStatus(false).then(setNet).catch(() => {});
-    }, 60000);
-    return () => clearInterval(t);
+    let active = true;
+    let timer;
+    async function refresh() {
+      try {
+        const [r, n] = await Promise.all([
+          window.shell.getMapData(false),
+          window.shell.getNetworkStatus(false)
+        ]);
+        if (active) { setState(r); setNet(n); }
+      } catch {
+        if (active) {
+          setState({ ok: false, error: 'Could not refresh the map. Try Refresh.' });
+          setNet(null);
+        }
+      } finally {
+        if (active) timer = setTimeout(refresh, 30000);
+      }
+    }
+    refresh();
+    return () => { active = false; clearTimeout(timer); };
   }, []);
 
   useEffect(() => {

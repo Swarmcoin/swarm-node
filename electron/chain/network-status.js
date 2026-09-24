@@ -127,8 +127,8 @@ class NetworkStatus {
         .catch((e) => { this.error = e.message; })
         .finally(() => { this.inFlight = null; });
     }
-    // Only block when there is nothing at all to show yet.
-    if (this.inFlight && !this.value) await this.inFlight;
+    // A refresh returns its new result, not the previous poll's peer count.
+    if (this.inFlight) await this.inFlight;
 
     const ageMs = this.value ? Date.now() - this.fetchedAt : null;
     return {

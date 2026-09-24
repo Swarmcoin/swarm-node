@@ -91,7 +91,10 @@ function validateLive(raw) {
   }
   if (!nodes.length) return { ok: false, error: 'no usable place in the live map' };
 
-  const generated = Number(raw.generated_unix) || null;
+  const generated = Number(raw.generated_unix);
+  if (!Number.isFinite(generated) || generated <= 0 || generated * 1000 > Date.now() + 60000) {
+    return { ok: false, error: 'the live map has no valid generation time' };
+  }
   return {
     ok: true,
     data: {
@@ -102,7 +105,7 @@ function validateLive(raw) {
       // cannot place still counts as an online node, so the two can differ.
       nodesOnline: Number.isInteger(raw.nodes_online)
         ? raw.nodes_online : nodes.reduce((acc, n) => acc + n.count, 0),
-      ageMs: generated ? Date.now() - generated * 1000 : null,
+      generatedAt: generated * 1000,
       source: 'Live: connected to the seed right now',
       note: typeof raw.note === 'string' ? raw.note.slice(0, 600) : null
     }
@@ -200,9 +203,12 @@ class MapData {
         .finally(() => { this.liveInFlight = null; });
     }
     if (this.inFlight && !this.cached) await this.inFlight;
+    // Return the census requested by this call, including on the first visit.
+    if (this.liveInFlight) await this.liveInFlight;
 
+    const ageMs = this.live ? Math.max(0, Date.now() - this.live.generatedAt) : null;
     const live = this.live
-      ? Object.assign({}, this.live, { stale: this.live.ageMs != null && this.live.ageMs > LIVE_STALE_MS })
+      ? Object.assign({}, this.live, { ageMs, stale: ageMs > LIVE_STALE_MS })
       : null;
 
     return {
