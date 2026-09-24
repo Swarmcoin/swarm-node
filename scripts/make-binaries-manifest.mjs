@@ -118,7 +118,12 @@ const WANT = {
 const FORBIDDEN = [/keytool/i, /\.keys\.json$/i, /^cookie$/i, /\.env/i];
 
 /** win32-x64, linux-x64, darwin-arm64 … */
-export const platformKey = () => `${process.platform}-${process.arch}`;
+const platformIndex = process.argv.indexOf('--platform');
+const platformOverride = platformIndex >= 0 ? process.argv[platformIndex + 1] : null;
+if (platformOverride && !/^darwin-(arm64|x64)$/.test(platformOverride)) {
+  throw new Error(`Unsupported platform override: ${platformOverride}`);
+}
+export const platformKey = () => platformOverride || `${process.platform}-${process.arch}`;
 
 const dest = path.join(ROOT, 'electron', 'net', 'binaries.json');
 

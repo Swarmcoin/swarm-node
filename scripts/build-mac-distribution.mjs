@@ -11,12 +11,15 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const { developerIdIdentity } = require('./mac-distribution-identity.cjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const output = path.join(root, 'release-mac-signed');
+const archIndex = process.argv.indexOf('--arch');
+const arch = archIndex < 0 ? 'arm64' : process.argv[archIndex + 1];
+if (!['arm64', 'x64'].includes(arch)) throw new Error(`Unsupported Mac architecture: ${arch}`);
+const output = path.join(root, arch === 'x64' ? 'release-mac-signed-x64' : 'release-mac-signed');
 const profile = process.env.APPLE_KEYCHAIN_PROFILE;
 const version = require('../package.json').version;
-const app = path.join(output, 'mac-arm64', 'SWARM Node.app');
-const dmName = `SWARM-Node-${version}-mac-arm64.dmg`;
-const zipName = `SWARM-Node-${version}-mac-arm64.zip`;
+const app = path.join(output, arch === 'x64' ? 'mac' : 'mac-arm64', 'SWARM Node.app');
+const dmName = `SWARM-Node-${version}-mac-${arch}.dmg`;
+const zipName = `SWARM-Node-${version}-mac-${arch}.zip`;
 const dmg = path.join(output, dmName);
 const zip = path.join(output, zipName);
 const sha = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -40,7 +43,10 @@ try {
 }
 if (fs.existsSync(output)) throw new Error(`${output} exists; archive or remove the previous generated output before rebuilding`);
 
-const assets = [
+const assets = arch === 'x64' ? [
+  ['zebrad-darwin-x64', 'swarm-node-daemon', '486cfa2fb459427386705ae7bde05b172e58ae3fa794dd73d36dbd2d31f88748'],
+  ['privacy-miner-darwin-x64', 'swarm-miner', 'e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68'],
+] : [
   ['zebrad-darwin-arm64', 'swarm-node-daemon', '61a2333ff660aa55f4351f88654bc4ad9f6041b65b0bf5349cd57d95e25160cb'],
   ['privacy-miner-darwin-arm64', 'swarm-miner', 'b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a'],
 ];
@@ -57,16 +63,19 @@ if (fs.readdirSync(binDir).some((name) => /keytool|\.keys\.json$|^cookie$|\.env/
   throw new Error('Refusing to package a key tool or private material');
 }
 
-run('node', ['scripts/make-binaries-manifest.mjs']);
-run('node', ['scripts/prepare-mac-signed-binaries.mjs']);
+run('node', ['scripts/make-binaries-manifest.mjs', '--platform', `darwin-${arch}`]);
+run('node', ['scripts/prepare-mac-signed-binaries.mjs', '--arch', arch]);
 run('npm', ['run', 'build:ui']);
-run('npx', ['electron-builder', '--mac', '--arm64', '--config', 'configs/swarm-mac-developer-id.cjs', '--publish', 'never']);
+run('npx', ['electron-builder', '--mac', `--${arch}`, '--config', 'configs/swarm-mac-developer-id.cjs', '--publish', 'never'],
+  { env: { ...process.env, SWARM_MAC_ARCH: arch } });
 
-run('bash', ['scripts/check-arch.sh', path.join(output, 'mac-arm64'), 'arm64']);
+run('bash', ['scripts/check-arch.sh', path.dirname(app), arch === 'x64' ? 'x86_64' : 'arm64']);
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
 run('xcrun', ['stapler', 'validate', app]);
 run('spctl', ['--assess', '--type', 'execute', '--verbose=4', app]);
-run('node', ['scripts/smoke-renderer.mjs', path.join(app, 'Contents/MacOS'), path.join(output, 'smoke')]);
+if (!process.argv.includes('--skip-smoke')) {
+  run('node', ['scripts/smoke-renderer.mjs', path.join(app, 'Contents/MacOS'), path.join(output, 'smoke')]);
+}
 
 // The app is already notarized and stapled before electron-builder writes the
 // DMG. Submit that exact final DMG as well, then staple its own ticket.
@@ -90,6 +99,6 @@ fs.mkdirSync(out);
 for (const file of [dmg, zip]) fs.copyFileSync(file, path.join(out, path.basename(file)));
 const checksums = [dmName, zipName].sort().map((name) => `${sha(path.join(out, name))} *${name}`).join('\n') + '\n';
 fs.writeFileSync(path.join(out, 'SHA256SUMS'), checksums);
-run('node', ['scripts/make-release-manifest.mjs', out, 'darwin-arm64', '--signed', '--notary-submission', result.id]);
+run('node', ['scripts/make-release-manifest.mjs', out, `darwin-${arch}`, '--signed', '--notary-submission', result.id]);
 console.log(checksums);
 console.log(`Signed artifacts and manifest: ${out}`);
