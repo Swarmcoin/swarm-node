@@ -16,6 +16,7 @@ const arch = archIndex < 0 ? 'arm64' : process.argv[archIndex + 1];
 if (!['arm64', 'x64'].includes(arch)) throw new Error(`Unsupported Mac architecture: ${arch}`);
 const output = path.join(root, arch === 'x64' ? 'release-mac-signed-x64' : 'release-mac-signed');
 const profile = process.env.APPLE_KEYCHAIN_PROFILE;
+const resume = process.argv.includes('--resume');
 const version = require('../package.json').version;
 const app = path.join(output, arch === 'x64' ? 'mac' : 'mac-arm64', 'SWARM Node.app');
 const dmName = `SWARM-Node-${version}-mac-${arch}.dmg`;
@@ -41,8 +42,16 @@ try {
 } catch {
   throw new Error(`Cannot use notarytool Keychain profile ${profile}; configure it locally before building`);
 }
-if (fs.existsSync(output)) throw new Error(`${output} exists; archive or remove the previous generated output before rebuilding`);
+if (resume) {
+  for (const file of [app, dmg, zip]) {
+    if (!fs.existsSync(file)) throw new Error(`Cannot resume without generated output: ${file}`);
+  }
+  if (fs.existsSync(path.join(output, 'out'))) throw new Error('Signed release output already finalized');
+} else if (fs.existsSync(output)) {
+  throw new Error(`${output} exists; archive or remove the previous generated output before rebuilding`);
+}
 
+if (!resume) {
 const assets = arch === 'x64' ? [
   ['zebrad-darwin-x64', 'swarm-node-daemon', '486cfa2fb459427386705ae7bde05b172e58ae3fa794dd73d36dbd2d31f88748'],
   ['privacy-miner-darwin-x64', 'swarm-miner', 'e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68'],
@@ -68,6 +77,7 @@ run('node', ['scripts/prepare-mac-signed-binaries.mjs', '--arch', arch]);
 run('npm', ['run', 'build:ui']);
 run('npx', ['electron-builder', '--mac', `--${arch}`, '--config', 'configs/swarm-mac-developer-id.cjs', '--publish', 'never'],
   { env: { ...process.env, SWARM_MAC_ARCH: arch } });
+}
 
 run('bash', ['scripts/check-arch.sh', path.dirname(app), arch === 'x64' ? 'x86_64' : 'arm64']);
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
