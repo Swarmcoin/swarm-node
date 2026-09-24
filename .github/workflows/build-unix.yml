@@ -320,6 +320,8 @@ jobs:
           codesign --verify --deep --strict "$app"
           spctl --assess --type execute --verbose=4 "$app"
           xcrun stapler validate "$app"
+          "$app/Contents/Resources/bin/swarm-node-daemon" --version
+          "$app/Contents/Resources/bin/swarm-miner" --help >/dev/null
           node scripts/smoke-renderer.mjs "$app/Contents/MacOS" signed-intel/smoke
           ditto -x -k signed-intel/SWARM-Node-0.2.0-testnet.7-mac-x64.zip signed-intel/zip-app
           codesign --verify --deep --strict 'signed-intel/zip-app/SWARM Node.app'
