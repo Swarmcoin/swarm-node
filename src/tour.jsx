@@ -74,9 +74,9 @@ export function tourSteps(s, cfg) {
             shows the whole 6.25 as your income.
           </p>
           <p>
-            New rewards are not spendable immediately: a freshly mined coin needs{' '}
-            <b>{maturity} confirmations</b> before the network lets it move, so it appears here as
-            <i> maturing</i> first and becomes <i>spendable</i> on its own.
+            Transparent rewards need <b>{maturity} confirmations</b> to mature. Shielded rewards
+            have no coinbase maturity countdown. Open your wallet to see received funds and
+            their spendability; this page records mining income, not your current wallet balance.
           </p>
         </>
       )

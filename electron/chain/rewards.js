@@ -17,7 +17,7 @@
 //    report the subsidy the node states for those heights, clearly labelled
 //    "check your wallet". We never claim to know a shielded balance.
 //
-// Maturity: a coinbase output cannot be spent until it has the network's
+// Maturity: a transparent coinbase output cannot be spent until it has the network's
 // coinbase-maturity depth of confirmations (100 on this chain). Anything
 // shallower is reported as maturing, never as spendable.
 //
@@ -172,10 +172,8 @@ class RewardLedger {
         // height is the best honest label, and it is reported as exactly that.
         const share = this.minerShareOf(b);
         if (Number.isInteger(share)) shieldedSubsidyZat += share;
-        if (!mature) {
-          const left = this.maturity - confirmations(b.height, tipHeight);
-          if (nextMaturesInBlocks == null || left < nextMaturesInBlocks) nextMaturesInBlocks = left;
-        }
+        // Shielded rewards have no transparent coinbase maturity countdown.
+        // Only the wallet can report their balance and spendability.
       }
     }
 

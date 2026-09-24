@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Pill, Metric, Notice, Switch, fmtCoins, fmtBytes, fmtDuration, fmtAge, fmtSolps, shortHash } from './ui.jsx';
 import { CodeLockSettings } from './lock.jsx';
+import { rewardStatus } from './reward-status.mjs';
 
 // ---------------------------------------------------------------- mining
 export function MiningView({ s, api }) {
@@ -183,14 +184,14 @@ export function MiningView({ s, api }) {
             wallet can see the note. Nothing is estimated, and a tile with
             nothing behind it still says why. */}
         <Metric
-          label={`Honey spendable (${s.network.ticker})`}
+          label={`${s.rewards.transparentBlocks ? 'Mature rewards' : 'Shielded subsidy'} (${s.network.ticker})`}
           value={s.rewards.transparentBlocks
             ? fmtCoins(s.rewards.spendableZat, atomic)
             : s.rewards.shieldedBlocks ? fmtCoins(s.rewards.shieldedSubsidyZat, atomic) : null}
           detail={s.rewards.transparentBlocks
-            ? `${s.rewards.maturity}+ confirmations`
+            ? `${s.rewards.maturity}+ confirmations · mining income, not your wallet balance`
             : s.rewards.shieldedBlocks
-              ? 'credited to your shielded address · your wallet shows the balance'
+              ? 'subsidy from blocks found · your wallet shows received funds and fees'
               : 'nothing mined yet'}
           edge="var(--green)"
         />
@@ -299,7 +300,8 @@ export function MiningView({ s, api }) {
           8% Core Development, 4% Grants &amp; Ecosystem, 8% Community &amp; Development Reserve.
           In the first era the block reward is 6.25 {s.network.ticker}, so a block you find pays
           you <b>5.00 {s.network.ticker}</b> plus that block&apos;s transaction fees — not 6.25.
-          Coinbase rewards can only be spent after {s.rewards.maturity} confirmations.
+          Transparent rewards need {s.rewards.maturity} confirmations. Shielded rewards have no
+          coinbase maturity countdown; your wallet shows their balance and when they can be spent.
         </p>
       </div>
     </div>
@@ -455,13 +457,13 @@ export function RewardsView({ s }) {
       <div className="grid c3">
         <Metric label="Blocks found" value={r.blocksFound} detail="by this machine, on this chain" edge="var(--orange)" />
         <Metric
-          label={`Spendable (${s.network.ticker})`}
+          label={`${r.transparentBlocks ? 'Mature rewards' : 'Shielded subsidy'} (${s.network.ticker})`}
           value={r.transparentBlocks
             ? fmtCoins(r.spendableZat, atomic)
             : r.shieldedBlocks ? fmtCoins(r.shieldedSubsidyZat, atomic) : null}
           detail={r.transparentBlocks
-            ? `${r.maturity}+ confirmations`
-            : r.shieldedBlocks ? 'credited to your shielded address · your wallet shows the balance' : 'nothing mined yet'}
+            ? `${r.maturity}+ confirmations · mining income, not your wallet balance`
+            : r.shieldedBlocks ? 'subsidy from blocks found · your wallet shows received funds and fees' : 'nothing mined yet'}
           edge="var(--green)"
         />
         <Metric
@@ -509,8 +511,7 @@ export function RewardsView({ s }) {
             </thead>
             <tbody>
               {r.blocks.map((b) => {
-                const conf = s.node.height == null ? 0 : Math.max(0, s.node.height - b.height + 1);
-                const mature = conf >= r.maturity;
+                const status = rewardStatus(b, s.node.height, r.maturity);
                 return (
                   <tr key={b.hash}>
                     <td className="mono">{b.height.toLocaleString('en-US')}</td>
@@ -521,7 +522,7 @@ export function RewardsView({ s }) {
                         ? <span className="dim" title="encrypted on the chain">shielded</span>
                         : `${fmtCoins(b.paidZat, atomic)} ${s.network.ticker}`}
                     </td>
-                    <td className="num">{mature ? <span style={{ color: 'var(--green)' }}>spendable</span> : <span className="dim">{r.maturity - conf} to go</span>}</td>
+                    <td className="num"><span className={status.mature ? undefined : 'dim'} style={status.mature ? { color: 'var(--green)' } : undefined}>{status.label}</span></td>
                   </tr>
                 );
               })}

@@ -15,6 +15,16 @@ const RECIPIENTS = [
 
 const ERA0 = Math.round(6.25 * ZAT_PER_COIN); // 625_000_000 zatoshi
 
+test('shielded rewards never shorten the transparent maturity countdown', () => {
+  const ledger = new RewardLedger({ maturity: 100, recipients: RECIPIENTS });
+  ledger.record({ hash: 'visible', height: 200, mode: 'transparent', paidZat: 500000000 });
+  ledger.record({ hash: 'shielded', height: 110, mode: 'shielded', subsidyZat: ERA0 });
+  assert.strictEqual(ledger.totals(205).nextMaturesInBlocks, 94);
+  const shieldedOnly = new RewardLedger({ maturity: 100 });
+  shieldedOnly.record({ hash: 'shielded', height: 205, mode: 'shielded', subsidyZat: ERA0 });
+  assert.strictEqual(shieldedOnly.totals(205).nextMaturesInBlocks, null);
+});
+
 test('the miner gets 80% of the era-0 subsidy: 5.00 SWM, not 6.25', () => {
   const s = splitSubsidy(ERA0, RECIPIENTS);
   assert.strictEqual(s.minerZat, 500000000);
