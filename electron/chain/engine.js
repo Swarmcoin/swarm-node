@@ -420,9 +420,17 @@ class ChainEngine extends EventEmitter {
 
   /** Restart with a new config. Used when a setting the node reads changes. */
   async restartNode(why) {
-    this.log(`restarting the node: ${why}`);
-    await this.stopNode();
-    return this.startNode();
+    // A gate pause and a user changing payout can request restarts together.
+    // Queue them so neither stop can tear down the other's newly started node.
+    const previous = this._restartRun || Promise.resolve();
+    const run = previous.catch(() => {}).then(async () => {
+      this.log(`restarting the node: ${why}`);
+      await this.stopNode();
+      return this.startNode();
+    });
+    this._restartRun = run;
+    try { return await run; }
+    finally { if (this._restartRun === run) this._restartRun = null; }
   }
 
   /**
@@ -523,8 +531,21 @@ class ChainEngine extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- mining
+  async waitForNodeRpc(timeoutMs = 30000) {
+    const until = Date.now() + timeoutMs;
+    while (Date.now() < until) {
+      if (!this.node || !this.node.running) return { ok: false, error: 'The node stopped before its RPC became ready.' };
+      try {
+        if (await this.rpc.getInfo()) return { ok: true };
+      } catch { /* A restart removes the old cookie before the new RPC is ready. */ }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return { ok: false, error: 'The node RPC did not become ready within 30 seconds; no miner was started.' };
+  }
+
   async startMining() {
     this.mining.armed = false;   // an explicit start supersedes an armed one
+    if (this._restartRun) await this._restartRun;
     if (!this.node || !this.node.running) return { ok: false, error: 'Start the full node first.' };
     if (!this.address.value) return { ok: false, error: 'Paste a payout address first.' };
 
@@ -548,6 +569,14 @@ class ChainEngine extends EventEmitter {
     if (!this.standardMiningAvailable()) {
       return { ok: false, error: 'Standard mining is not available in this build: privacy-miner is not bundled yet.' };
     }
+    // Changing the payout restarts Zebra. startNode() returns when the process
+    // exists, before it writes its new RPC cookie; a worker launched in that
+    // gap exits with "No such file or directory" and never mines.
+    const ready = await this.waitForNodeRpc();
+    if (!ready.ok) return ready;
+    await this.refreshChain();
+    const currentGate = this.evaluateGate();
+    if (!currentGate.allow) return { ok: false, error: currentGate.message, reason: currentGate.reason };
     const minerBin = this.simulateStandardMiner ? { path: null } : requireBinary('miner', { allowUnpinned: this.allowUnpinned });
     this.pool = new MinerPool({ binaryPath: minerBin.path, simulate: this.simulateStandardMiner });
     this.pool.on('log', (e) => this.emit('log', e));
@@ -1247,6 +1276,7 @@ class ChainEngine extends EventEmitter {
       ? `payout address set (${result.kind}); the node confirmed it`
       : `payout address set (${result.kind}); it has the right shape but the node could not be asked yet`);
     // The node carries the payout in its own config, so it must be rewritten.
+    if (this._restartRun) await this._restartRun;
     if (changed && this.node && this.node.running) {
       await this.restartNode('the payout address changed');
     }

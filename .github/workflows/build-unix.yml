@@ -8,9 +8,9 @@ name: Build Linux and macOS packages
 #   SWARM-Node-<version>-mac-x64.dmg / .zip      Intel Macs
 #   SHA256SUMS, release-manifest.json            per platform
 #
-# It does NOT publish a GitHub Release. Everything lands on a DRAFT
-# pre-release of this private repository, exactly as the Windows build does,
-# and publishing is a deliberate act by somebody else.
+# It does NOT publish a GitHub Release. Linux lands on a DRAFT pre-release;
+# unsigned macOS builds are CI artifacts only. They must not overwrite or be
+# mistaken for Developer ID notarized packages built on the owner's Mac.
 #
 # WHY A MATRIX AND NOT THREE FILES: the steps are identical apart from which
 # pinned binaries are fetched and which electron-builder target is asked for.
@@ -230,13 +230,11 @@ jobs:
 
           node scripts/make-release-manifest.mjs out ${{ matrix.key }}
 
-      # Primary delivery: a DRAFT pre-release of this private repository. Not
-      # published, not public, and not a product release.
-      #
-      # Each platform adds ITS OWN files to the one draft for this version and
-      # never deletes anybody else's, because three jobs share the tag. The
-      # Windows workflow follows the same rule; completion order is irrelevant.
+      # Linux may update the private draft. The Windows workflow owns its own
+      # artifacts. Unsigned Mac packages remain CI artifacts until this Mac's
+      # Developer ID build passes a fresh browser-download install.
       - name: Add this platform's files to the draft release
+        if: matrix.key == 'linux-x64'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -261,6 +259,18 @@ jobs:
           fi
           gh release upload "$tag" -R '${{ github.repository }}' --clobber out/*
           echo "draft release: https://github.com/${{ github.repository }}/releases/tag/$tag"
+
+      - name: Keep unsigned macOS packages as CI test artifacts
+        if: startsWith(matrix.key, 'darwin-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-test-${{ matrix.key }}
+          path: |
+            out/*.dmg
+            out/*.zip
+            out/SHA256SUMS
+            out/release-manifest.json
+          retention-days: 14
 
       - name: Keep the smoke screenshots as evidence
         uses: actions/upload-artifact@v4

@@ -29,6 +29,7 @@ const { isAlive } = require(path.join(ROOT, 'electron/chain/graceful-stop.js'));
 
 const manifest = require(path.join(ROOT, 'electron/net/network.json'));
 const WANT_MINE = process.argv.includes('--mine');
+const RESUME = process.argv.includes('--resume');
 const SYNC_TIMEOUT_MS = Number(process.env.SWARM_LIVE_TIMEOUT) || 420000;
 
 // A second device would use the app's default ports. This machine already runs
@@ -56,10 +57,13 @@ if (!bin.ok) { console.error(bin.reason); process.exit(2); }
 console.log(`network : ${manifest.identity.network_name}`);
 console.log(`seed    : ${manifest.seed_peers.join(', ')}`);
 console.log(`genesis : ${manifest.genesis.hash}`);
-console.log(`data    : ${dataDir}  (emptied first, like a fresh install)`);
+console.log(`data    : ${dataDir}  (${RESUME ? 'continuing this disposable check' : 'emptied first, like a fresh install'})`);
 console.log(`ports   : p2p ${P2P}, rpc ${RPC} loopback\n`);
 
-fs.rmSync(dataDir, { recursive: true, force: true });
+if (RESUME && !fs.existsSync(path.join(dataDir, 'state'))) {
+  throw new Error(`--resume needs a previous disposable check at ${dataDir}`);
+}
+if (!RESUME) fs.rmSync(dataDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(dataDir, 'state'), { recursive: true });
 
 const engine = new ChainEngine({
@@ -104,12 +108,12 @@ try {
   const gen = await engine.ensureGenesis();
   check('the node ends up on the right genesis block', gen.ok === true && gen.hash === manifest.genesis.hash, gen.hash || gen.error);
   const fromPeer = gen.source === 'received from a peer';
-  notes.push(
-    fromPeer
+  notes.push(RESUME
+    ? 'This run continued a disposable data directory; the initial run separately recorded that genesis came from the seed.'
+    : fromPeer
       ? 'A fresh node DOES receive block 0 from the seed by itself. The embedded genesis is a fallback that was not needed.'
-      : `A fresh node does NOT receive block 0 from the seed within 45 s; the app handed it over from the build (source: ${gen.source}). This is invisible to the user but it means the embedded genesis.hex is load-bearing.`
-  );
-  console.log(`\nGENESIS SOURCE: ${gen.source}\n`);
+      : `A fresh node does NOT receive block 0 from the seed within 45 s; the app handed it over from the build (source: ${gen.source}). This is invisible to the user but it means the embedded genesis.hex is load-bearing.`);
+  console.log(`\nGENESIS SOURCE: ${RESUME ? 'present in the resumed data' : gen.source}\n`);
 
   // --- peers and sync ------------------------------------------------------
   const syncUntil = Date.now() + SYNC_TIMEOUT_MS;

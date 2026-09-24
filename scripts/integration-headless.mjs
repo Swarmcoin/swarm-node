@@ -320,9 +320,11 @@ async function main() {
   check('11c the node was NOT restarted to start or stop the standard miner', engine.node && engine.node.running === true);
 
   const stdDeadline = Date.now() + MINE_TIMEOUT_MS;
+  const stdStartedAt = Date.now();
   while (Date.now() < stdDeadline) {
     await engine.tick();
     if (engine.ledger.totals(engine.chain.height || 0).transparentBlocks >= 1) break;
+    if (Date.now() - stdStartedAt > 5000 && engine.pool && engine.pool.workerCount === 0) break;
     await sleep(1500);
   }
   const st2 = engine.getState();
@@ -376,6 +378,7 @@ try {
     // The app's own narration, not the node's firehose: this is what the user
     // would have seen in the log panel.
     appLog: logLines.filter((l) => l.kind === 'app').map((l) => l.text),
+    minerLog: logLines.filter((l) => l.kind === 'miner').map((l) => l.text),
     logTail: logLines.slice(-40)
   };
   const out = path.join(dataDir, 'integration-report.json');

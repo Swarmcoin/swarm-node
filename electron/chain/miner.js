@@ -28,7 +28,9 @@ const { redact } = require('./rpc');
 
 // Lines the miner prints that we can turn into real numbers. Anything we
 // cannot parse is shown as "—", never invented.
-const ACCEPTED_RE = /\b(?:accepted|submitted)\b[^0-9a-f]*([0-9a-f]{64})/i;
+// The native miner prints `ACCEPTED height 40 hash <hex> ...`. Match the
+// labelled hash: the height's digits must not consume the gap before it.
+const ACCEPTED_RE = /\b(?:accepted|submitted)\b[^\r\n]*?\bhash\s+([0-9a-f]{64})\b/i;
 const REJECTED_RE = /\brejected\b/i;
 const SOLPS_RE = /([0-9]+(?:\.[0-9]+)?)\s*(k|K|M)?\s*sol\/s/;
 
