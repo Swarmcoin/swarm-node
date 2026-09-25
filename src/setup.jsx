@@ -217,7 +217,7 @@ export function Payout({ state, onBack, onNext, api }) {
           <input
             type="text"
             spellCheck={false}
-            placeholder="tm… for standard mining, or swarm1… or utest1… for shielded mining"
+            placeholder={`${state?.network?.transparentHint || 'tm…'} for standard mining, or ${state?.network?.unifiedHint || 'swarm1… or utest1…'} for shielded mining`}
             value={value}
             onChange={(e) => setValue(e.target.value)}
           />

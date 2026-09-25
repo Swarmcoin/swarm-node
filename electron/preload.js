@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld('shell', {
   getConfig: () => invoke('shell:getConfig'),
   setConsent: (v) => invoke('shell:setConsent', v),
   setSetupStep: (step) => invoke('shell:setSetupStep', step),
+  // Which SWARM network to run. Refused by the main process unless this build
+  // carries that network's definition.
+  setNetworkProfile: (id) => invoke('shell:setNetworkProfile', id),
   completeSetup: () => invoke('shell:completeSetup'),
   restartSetup: () => invoke('shell:restartSetup'),
   setTourSeen: (seen) => invoke('shell:setTourSeen', seen === true),

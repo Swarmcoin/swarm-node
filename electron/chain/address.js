@@ -34,6 +34,7 @@
 'use strict';
 
 const { inspect } = require('./address-format');
+const { DEFAULT_PROFILE_ID, profileById, classifyPrefix, requireProfile } = require('./network-profile');
 
 const MAX_LEN = 512;
 
@@ -69,15 +70,36 @@ function plausible(addr) {
  *
  * @param {import('./rpc').ZebraRpc} rpc
  * @param {string} raw
+ * @param {string} [profileId]  the selected SWARM network
  * @returns {Promise<{
  *   ok:boolean, address:string, kind:'transparent'|'unified'|'sapling'|null,
  *   modes:string[], detail:string, error?:string
  * }>}
  */
-async function validateWithNode(rpc, raw) {
+async function validateWithNode(rpc, raw, profileId = DEFAULT_PROFILE_ID) {
+  const profile = profileById(profileId) || requireProfile(DEFAULT_PROFILE_ID);
   const address = String(raw == null ? '' : raw).trim();
   if (!plausible(address)) {
     return { ok: false, address, kind: null, modes: [], detail: '', confirmed: false, error: 'That does not look like a SWARM address. Copy it from the SWARM Wallet.' };
+  }
+
+  // WRONG NETWORK, DECIDED HERE. The node is the authority on whether an
+  // address is valid, but it is not the authority on which network THIS APP
+  // was asked to run: a testnet node happily validates a testnet address while
+  // the user has chosen SWARM mainnet, and mining would then pay rewards to an
+  // address that does not exist on the chain being mined. So an address whose
+  // human-readable prefix belongs to the other SWARM network is refused before
+  // the node is asked at all. Upstream Zcash prefixes are left to the path
+  // below, which still refuses them, but says what else went wrong too.
+  const seen = classifyPrefix(profile, address);
+  if (seen.wrongNetwork && seen.wrongNetwork !== 'upstream') {
+    const other = profileById(seen.wrongNetwork);
+    return {
+      ok: false, address, kind: null, modes: [], detail: '', confirmed: false,
+      wrongNetwork: seen.wrongNetwork,
+      error: `That is a ${other.label} address and this app is running the ${profile.label}. ` +
+             `Rewards paid to it could never be spent: switch the SWARM Wallet to the ${profile.label} and copy a receive address from there.`
+    };
   }
 
   /** Did the node produce a verdict, or did the call simply fail? */
@@ -139,7 +161,7 @@ async function validateWithNode(rpc, raw) {
   //    accept it if it is well formed, and say plainly what is missing.
   if (!t.answered || !z.answered) {
     const why = whyNoAnswer(t.answered ? z.code : t.code);
-    const shape = inspect(address);
+    const shape = inspect(address, profile.id);
     if (shape.looksValid) {
       return {
         ok: true,

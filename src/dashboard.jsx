@@ -232,13 +232,13 @@ export function MiningView({ s, api }) {
             in one line and say what would change it. */}
         <div className="tiny dim" style={{ marginTop: 8 }}>
           {s.payout.kind === 'transparent'
-            ? <>Your address is a transparent <span className="mono">tm…</span> one, so Standard is
+            ? <>Your address is a transparent <span className="mono">{s.network.transparentHint}</span> one, so Standard is
               available and Shielded is not. Shielded needs a unified{' '}
-              <span className="mono">swarm1… or utest1…</span> address — paste one in Settings to use it.</>
+              <span className="mono">{s.network.unifiedHint}</span> address — paste one in Settings to use it.</>
             : s.payout.kind === 'unified'
-              ? <>Your address is a unified <span className="mono">swarm1… or utest1…</span> one, so Shielded is
+              ? <>Your address is a unified <span className="mono">{s.network.unifiedHint}</span> one, so Shielded is
                 available and Standard is not. Standard pays a transparent{' '}
-                <span className="mono">tm…</span> address — paste one in Settings to use it.</>
+                <span className="mono">{s.network.transparentHint}</span> address — paste one in Settings to use it.</>
               : <>Neither engine is available until you paste a payout address in Settings.</>}
         </div>
 
@@ -246,7 +246,7 @@ export function MiningView({ s, api }) {
           <div style={{ marginTop: 12 }}>
             <Notice kind="plain">
               Standard mining is not in this build yet: the separate miner program is not bundled.
-              Shielded mining works now and needs a <span className="mono">swarm1… or utest1…</span> address.
+              Shielded mining works now and needs a <span className="mono">{s.network.unifiedHint}</span> address.
             </Notice>
           </div>
         ) : null}
@@ -661,6 +661,20 @@ export function SettingsView({ s, cfg, api }) {
             <tr><td className="muted">Version</td><td className="num">{cfg.appVersion}</td></tr>
             <tr><td className="muted">Network</td><td className="num">{s.network.name}</td></tr>
             <tr><td className="muted">Network definition</td><td className="num">{cfg.networkSource}</td></tr>
+            {/* Every network this build knows, including the ones it cannot
+                run yet. A profile with no definition bundled is shown with the
+                reason in words, so "SWARM mainnet" is never a silent absence
+                and never a button that would join somebody else's chain. */}
+            {(cfg.networkProfiles || []).map((p) => (
+              <tr key={p.id}>
+                <td className="muted">{p.label}</td>
+                <td className="num">
+                  {p.id === cfg.networkProfile
+                    ? 'running now'
+                    : p.selectable ? 'available in this build' : 'not available yet'}
+                </td>
+              </tr>
+            ))}
             <tr><td className="muted">Node program</td><td className="num">{s.binaries.zebrad.ok ? 'verified' : 'not usable'}</td></tr>
             <tr><td className="muted">Node SHA-256</td><td className="num" style={{ fontSize: 11, wordBreak: 'break-all' }}>{s.binaries.zebrad.sha256 || '—'}</td></tr>
             <tr><td className="muted">Miner program</td><td className="num">{s.binaries.miner.simulated ? 'simulated' : s.binaries.miner.ok ? 'verified' : 'not bundled'}</td></tr>

@@ -27,7 +27,15 @@ function defaults(manifest) {
     idleOnly: false,
     autoResume: true,
     firstNodeOverride: false,
+    // Which SWARM network this install runs. One of the ids in
+    // electron/chain/network-profile.js; never a free-form string, and never
+    // upstream Zcash. A profile whose definition is not bundled with the build
+    // cannot be selected, so this falls back on load.
+    networkProfile: 'swarm-testnet',
     dataDir: null,                 // set on first run to the default chain folder
+    // The mainnet chain folder, kept apart from the testnet one: two chains
+    // cannot share a state database.
+    dataDirMainnet: null,
     p2pPort: Number(ports.p2p) || 18233,
     rpcPort: Number(ports.rpc) || 18232,
     p2pListen: null,

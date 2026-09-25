@@ -1,8 +1,16 @@
 // Rebuild the embedded network definition from the canonical manifest.
 //
 //   node scripts/embed-network.mjs <path to network/swarm-testnet>
+//   node scripts/embed-network.mjs <path to network/swarm-mainnet>
 //
-// The result, electron/net/network.json, is the canonical manifest verbatim
+// The profile is read from the manifest's own identity, and the output file is
+// the one that profile's loader looks for: electron/net/network.json for the
+// SWARM testnet, electron/net/network-mainnet.json for SWARM mainnet. A build
+// with no mainnet file shows the profile as "not available yet" rather than
+// inventing a genesis hash — which is why this script is the ONLY supported
+// way that file appears, and why it runs after the launch ceremony, not before.
+//
+// The result is the canonical manifest verbatim
 // plus three things the desktop app needs and the chain definition does not:
 //   * genesis.hex       — the genesis block bytes, so the very first node of a
 //                         network can hand them to its own node;
@@ -15,8 +23,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const NP = createRequire(import.meta.url)('../electron/chain/network-profile.js');
 const src = process.argv[2] || 'D:/privacy/network/swarm-testnet';
 
 const manifestPath = path.join(src, 'manifest.json');
@@ -31,10 +41,15 @@ if (manifest.genesis.hex_file_sha256 && manifest.genesis.hex_file_sha256 !== hex
   throw new Error(`genesis.hex sha256 ${hexSha} does not match the manifest's ${manifest.genesis.hex_file_sha256}`);
 }
 if (!/^[0-9a-f]{64}$/.test(manifest.genesis.hash || '')) throw new Error('manifest has no genesis hash');
-if (manifest.identity.network_kind !== 'Testnet') throw new Error('this app only runs testnets');
+// Which of the two SWARM networks this definition is. Upstream Zcash is
+// refused here, before anything is written into the build.
+const profile = NP.profileForManifest(manifest);
+// Everything the profile requires of a definition: the genesis hash, and on a
+// production network the three funding destinations, each an s3... address.
+NP.validateProfileManifest(profile, manifest);
 for (const r of manifest.economics.recipients) {
-  if (!/^t2[1-9A-HJ-NP-Za-km-z]{20,}$/.test(r.address || '')) {
-    throw new Error(`recipient ${r.label} has no P2SH address`);
+  if (!new RegExp(`^${profile.fundingAddressPrefix}[1-9A-HJ-NP-Za-km-z]{20,}$`).test(r.address || '')) {
+    throw new Error(`recipient ${r.label} has no ${profile.fundingAddressPrefix}... P2SH address`);
   }
 }
 
@@ -84,9 +99,13 @@ const out = {
     'The project never asks for recovery phrases, private keys or payments through any channel.'
 };
 
-const dest = path.join(ROOT, 'electron', 'net', 'network.json');
+const dest = path.join(
+  ROOT, 'electron', 'net',
+  profile.id === NP.DEFAULT_PROFILE_ID ? 'network.json' : `network-${profile.id.replace(/^swarm-/, '')}.json`
+);
 fs.writeFileSync(dest, Buffer.from(JSON.stringify(out, null, 2) + '\n', 'utf8'));
 console.log(`wrote ${path.relative(ROOT, dest)}`);
+console.log(`  profile      ${profile.id} -> network = "${profile.zebraNetwork}"`);
 console.log(`  network      ${out.identity.network_name} (magic ${out.identity.network_magic.join(',')})`);
 console.log(`  genesis      ${out.genesis.hash}`);
 console.log(`  genesis.hex  ${genesisHex.length / 2} bytes, sha256 ${hexSha}`);

@@ -26,6 +26,7 @@ const { SettingsStore } = require('./config-store');
 const { MapData } = require('./chain/map-data');
 const { NetworkStatus } = require('./chain/network-status');
 const { inspect: inspectAddress } = require('./chain/address-format');
+const NP = require('./chain/network-profile');
 const L = require('./lock-code');
 const MC = require('./map-city');
 const V = require('./ipc-validate');
@@ -64,17 +65,52 @@ if (dataDirOverride && (!app.isPackaged || isTestRun)) {
 }
 
 // ---------------------------------------------------------------- network
-function loadManifest() {
-  // One embedded file decides which chain this build joins. Swapping it at
-  // build time is the supported way to point a build at another network.
-  const embedded = path.join(__dirname, 'net', 'network.json');
+//
+// TWO PROFILES, ONE OF WHICH MAY NOT EXIST YET.
+// SWARM Node knows two networks (see electron/chain/network-profile.js). The
+// testnet definition ships in every build. The mainnet one does not: its
+// genesis hash and its three funding destinations only exist after the launch
+// ceremony, and this app will not invent them. So a build without that file
+// still SHOWS "SWARM mainnet" and says, in a sentence, why it cannot be
+// chosen — which is a truthful "not launched yet", not a missing feature.
+const NET_DIR = path.join(__dirname, 'net');
+
+function loadNetworks() {
+  const found = NP.loadProfiles(NET_DIR);
+  // The development override replaces whichever profile's definition it names.
+  // It is still validated against that profile, so it cannot smuggle in
+  // another network under a profile's name.
   const override = process.env.SWARM_NODE_NETWORK;
-  const file = override && fs.existsSync(override) ? override : embedded;
-  const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
-  manifest._source = file === embedded ? 'embedded' : `override: ${file}`;
-  return manifest;
+  if (override && fs.existsSync(override)) {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(override, 'utf8'));
+      const profile = NP.profileForManifestOrKind(manifest);
+      const slot = found.find((f) => f.id === profile.id);
+      if (slot) {
+        slot.manifest = manifest;
+        slot.available = true;
+        slot.reason = null;
+        slot.file = override;
+        slot.overridden = true;
+      }
+    } catch (e) {
+      console.error(`[network] override ${override} refused: ${e.message}`);
+    }
+  }
+  return found;
 }
 
+/** Which profile this launch runs, and why, when it is not the one asked for. */
+function chooseProfile(networks, wanted) {
+  const asked = NP.profileById(wanted) ? wanted : NP.DEFAULT_PROFILE_ID;
+  const entry = networks.find((n) => n.id === asked);
+  if (entry && entry.available) return { entry, fellBack: null };
+  const fallback = networks.find((n) => n.id === NP.DEFAULT_PROFILE_ID);
+  return { entry: fallback, fellBack: entry ? entry.reason : `no profile ${asked}` };
+}
+
+let networks = null;
+let profile = null;
 let manifest = null;
 let settings = null;
 let engine = null;
@@ -262,7 +298,7 @@ function registerIpc() {
   handle('engine:setPayoutAddress', (addr) => engine.setPayoutAddress(V.payoutAddress(addr)));
   // Offline, instant, and never a claim about validity - see
   // electron/chain/address-format.js and defect N-3.
-  handle('engine:inspectAddress', (addr) => inspectAddress(V.text(addr, { max: 600, name: 'address' })));
+  handle('engine:inspectAddress', (addr) => inspectAddress(V.text(addr, { max: 600, name: 'address' }), profile.id));
   handle('engine:setUserOverride', (on) => engine.setUserOverride(V.bool(on, 'start anyway')));
   handle('engine:setFirstNodeOverride', (on, phrase) =>
     engine.setFirstNodeOverride(V.bool(on, 'override'), on ? V.confirmPhrase(phrase) : ''));
@@ -279,6 +315,21 @@ function registerIpc() {
     userDataDir: app.getPath('userData'),
     network: manifest.identity,
     networkSource: manifest._source,
+    // Which SWARM network is running, and every network this build knows —
+    // including the ones it cannot run yet, each with the reason in words.
+    networkProfile: profile.id,
+    networkProfiles: networks.map((n) => {
+      const p = NP.profileById(n.id);
+      return {
+        id: n.id,
+        label: n.label,
+        production: p.production === true,
+        selectable: n.available === true,
+        reason: n.reason,
+        p2pPort: p.ports.p2p,
+        rpcPort: p.ports.rpc
+      };
+    }),
     links,
     contactEmail: manifest.contact_email || null,
     channelsNote: manifest.channels_note || null,
@@ -301,6 +352,25 @@ function registerIpc() {
   // The wizard is finished only when the user reaches the end of it. The
   // RENDERER cannot pass a version in: it is stamped here from the running
   // build, so the marker cannot be forged or back-dated by the page.
+  // Choosing a network. Config-level on purpose: the engine, the chain folder
+  // and every port are built around one profile at start-up, so this records
+  // the choice and the app is restarted into it. A profile whose definition
+  // this build does not carry is refused here with its own reason, so nothing
+  // can select a network the app cannot actually define.
+  handle('shell:setNetworkProfile', (id) => {
+    const wanted = V.oneOf(V.text(id, { max: 32, name: 'network' }), NP.PROFILES.map((p) => p.id), 'network');
+    const entry = networks.find((n) => n.id === wanted);
+    if (!entry || !entry.available) {
+      return { ok: false, error: (entry && entry.reason) || `SWARM Node has no definition for ${wanted}.` };
+    }
+    settings.save({ networkProfile: wanted });
+    return {
+      ok: true,
+      networkProfile: wanted,
+      restartRequired: wanted !== profile.id,
+      note: wanted === profile.id ? null : 'Close and reopen SWARM Node to run it.'
+    };
+  });
   handle('shell:completeSetup', () =>
     settings.save({ setupCompletedVersion: app.getVersion(), setupCompletedAt: new Date().toISOString() }));
   handle('shell:restartSetup', () =>
@@ -488,11 +558,24 @@ async function runBenchmark() {
 
 // ---------------------------------------------------------------- lifecycle
 app.whenReady().then(() => {
-  manifest = loadManifest();
-  settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), manifest);
+  networks = loadNetworks();
+  const bootstrap = networks.find((n) => n.id === NP.DEFAULT_PROFILE_ID);
+  settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), bootstrap.manifest || {});
 
-  if (!settings.data.dataDir) {
-    settings.save({ dataDir: path.join(app.getPath('userData'), 'chain') });
+  const chosen = chooseProfile(networks, settings.data.networkProfile);
+  if (chosen.fellBack) {
+    console.log(`[network] ${settings.data.networkProfile} is not available (${chosen.fellBack}); running ${chosen.entry.id}`);
+    settings.save({ networkProfile: chosen.entry.id });
+  }
+  profile = NP.profileById(chosen.entry.id);
+  manifest = chosen.entry.manifest;
+  manifest._source = chosen.entry.overridden ? `override: ${chosen.entry.file}` : 'embedded';
+  manifest._profile = profile.id;
+
+  // Each network keeps its own chain folder. A mainnet node opened on testnet
+  // state is a wrong-chain node, and the state database cannot be shared.
+  if (!settings.data[profile.dataDirSetting]) {
+    settings.save({ [profile.dataDirSetting]: path.join(app.getPath('userData'), profile.dataDirName) });
   }
 
   hardenSession(session.defaultSession);
@@ -510,7 +593,8 @@ app.whenReady().then(() => {
 
   engine = new ChainEngine({
     manifest,
-    dataDir: settings.data.dataDir,
+    profile,
+    dataDir: NP.dataDirFor(profile, settings.data, app.getPath('userData')),
     settings: settings.data,
     saveSettings: (s) => settings.save(s),
     allowUnpinnedBinaries: !app.isPackaged,

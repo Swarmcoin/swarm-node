@@ -34,6 +34,7 @@ const { requireBinary, loadBaseline } = require('./binaries');
 const { TipOracle } = require('./tip-oracle');
 const { nextAction } = require('./next-action');
 const { explainExit, findForeignNode, stopNodeProcess, writeRecord, clearRecord } = require('./node-trouble');
+const { profileForManifestOrKind, checkNodeChain, checkNodeGenesis } = require('./network-profile');
 
 const TICK_MS = 1000;
 const SCAN_BUDGET_PER_TICK = 25;   // blocks re-checked per tick by the backstop scan
@@ -57,6 +58,15 @@ class ChainEngine extends EventEmitter {
   constructor(cfg) {
     super();
     this.manifest = cfg.manifest;
+    // WHICH SWARM NETWORK. Resolved from the manifest the build carries, or
+    // handed in by the main process when a profile was selected. It is never a
+    // string this file invents, and it can never be upstream Zcash: see
+    // electron/chain/network-profile.js.
+    this.profile = cfg.profile || profileForManifestOrKind(cfg.manifest);
+    // The chain label this node must report. A build carrying a throwaway or
+    // rehearsal definition names its own; otherwise it is the profile's.
+    this.expectedChainLabel =
+      ((cfg.manifest || {}).identity || {}).light_wallet_chain_label || this.profile.chainLabel;
     this.dataDir = cfg.dataDir;
     this.settings = cfg.settings;
     this.saveSettings = cfg.saveSettings || (() => {});
@@ -127,6 +137,10 @@ class ChainEngine extends EventEmitter {
     this._sizeTick = 0;
     // null until the node has told us which block 0 it holds.
     this.genesisState = null;
+    // null until the node has told us which chain it is on. See checkChain():
+    // ok:false means the node answered and named a DIFFERENT network, and that
+    // refuses mining outright.
+    this.chainCheck = null;
     // Why the node is not running, when the answer is not 'it was not started'.
     this.nodeTrouble = null;
     this.address = { value: this.settings.payoutAddress || '', kind: this.settings.payoutKind || null, detail: this.settings.payoutDetail || '', confirmed: false };
@@ -549,6 +563,11 @@ class ChainEngine extends EventEmitter {
     if (!this.node || !this.node.running) return { ok: false, error: 'Start the full node first.' };
     if (!this.address.value) return { ok: false, error: 'Paste a payout address first.' };
 
+    // NEVER MINE ON THE WRONG CHAIN. A block found there pays nothing, the
+    // payout address does not exist on it, and the work is thrown away.
+    const mismatch = this.chainMismatch();
+    if (mismatch) return { ok: false, error: mismatch, reason: 'WRONG_CHAIN' };
+
     const decision = this.evaluateGate();
     if (!decision.allow) return { ok: false, error: decision.message, reason: decision.reason };
 
@@ -909,6 +928,42 @@ class ChainEngine extends EventEmitter {
     if (this.timer.unref) this.timer.unref();
   }
 
+  /**
+   * Compare what the node says about itself with the profile that was chosen.
+   *
+   * Three outcomes, and the middle one matters: `ok: null` means the node did
+   * not say, which is not evidence of anything and never stops a node that
+   * works today. `ok: false` is the node naming a different network, and that
+   * is refused. On the production profile "did not say" IS a failure, because
+   * a zebrad without SwarmMainnet support cannot say "swarm-mainnet".
+   */
+  applyChainCheck(reported) {
+    const before = this.chainCheck ? this.chainCheck.ok : undefined;
+    this.chainCheck = checkNodeChain(this.profile, reported, { expected: this.expectedChainLabel });
+    if (this.chainCheck.ok === false && before !== false) {
+      this.lastError = this.chainCheck.error;
+      this.log(this.chainCheck.error);
+    }
+    return this.chainCheck;
+  }
+
+  /**
+   * Everything that must be true about the node before a single hash is
+   * computed: it is on the chain this app selected, and it holds that chain's
+   * genesis block. Both are "unknown until asked", and unknown never blocks.
+   */
+  chainMismatch() {
+    if (this.chainCheck && this.chainCheck.ok === false) return this.chainCheck.error;
+    if (this.genesisState && this.genesisState.ok === false && this.genesisState.error === 'wrong chain') {
+      const g = checkNodeGenesis(
+        (this.manifest.genesis || {}).hash,
+        this.genesisState.hash
+      );
+      return g.error || 'This node holds another network’s genesis block.';
+    }
+    return null;
+  }
+
   async refreshChain() {
     if (!this.node || !this.node.running) {
       this.chain = { ...this.chain, height: null, peers: 0, peersIn: 0, peersOut: 0, synced: null, tipAgeSec: null };
@@ -925,6 +980,13 @@ class ChainEngine extends EventEmitter {
         // sync-gate.js. That field extrapolates from the genesis timestamp and
         // reports a brand-new chain as thousands of blocks behind for ever.
         this.chain.estimatedHeight = Number.isFinite(Number(info.estimatedheight)) ? Number(info.estimatedheight) : null;
+        // WRONG-CHAIN DETECTION. The node names the network it is on in its
+        // own getblockchaininfo. Compare it with the profile this app was
+        // asked to run, every tick, and remember the verdict: mining refuses
+        // to start on a mismatch. On the production profile the answer must be
+        // the exact chain label, which is also the only proof that this zebrad
+        // understands SwarmMainnet at all.
+        this.applyChainCheck(info.chain != null ? info.chain : info.chainname);
       }
     } catch (e) {
       if (e.code !== 'NO_COOKIE') this.lastError = e.message;
@@ -1091,7 +1153,18 @@ class ChainEngine extends EventEmitter {
         chain: this.manifest.identity.chain,
         ticker: this.manifest.identity.ticker,
         isTestnet: this.manifest.identity.is_testnet !== false,
-        status: this.manifest.status
+        status: this.manifest.status,
+        // Which SWARM network this app is running, as the profile that decides
+        // the configuration shape, the payout address rules and the chain check.
+        profile: this.profile.id,
+        profileLabel: this.profile.label,
+        // How to name this network's payout addresses, so the wording in the
+        // UI follows the profile instead of naming the testnet's prefixes on
+        // a network where they would be wrong.
+        transparentHint: `${this.profile.transparent.p2pkh}…`,
+        unifiedHint: this.profile.unifiedPrefixes.map((u) => `${u}…`).join(' or '),
+        production: this.profile.production === true,
+        chainLabel: this.expectedChainLabel
       },
       node: {
         running: !!(this.node && this.node.running),
@@ -1116,6 +1189,7 @@ class ChainEngine extends EventEmitter {
         rpcPort: this.rpcPort,
         lastStop: this.node ? this.node.lastStopReport : null,
         genesis: this.genesisState,
+        chainCheck: this.chainCheck,
         // Why the node is not running, in words, when something is wrong.
         trouble: this.nodeTrouble || null
       },
@@ -1241,7 +1315,7 @@ class ChainEngine extends EventEmitter {
 
   // ---------------------------------------------------------------- settings
   async setPayoutAddress(raw) {
-    const result = await validateWithNode(this.rpc, raw);
+    const result = await validateWithNode(this.rpc, raw, this.profile.id);
     if (!result.ok) return result;
     const changed = result.address !== this.address.value;
     this.address = {
@@ -1333,7 +1407,10 @@ class ChainEngine extends EventEmitter {
   async setDataDir(dir) {
     if (typeof dir !== 'string' || !dir.trim()) return { ok: false, error: 'Choose a folder.' };
     if (this.node && this.node.running) return { ok: false, error: 'Stop the node before moving its data folder.' };
-    this.settings.dataDir = dir;
+    // Per profile. Two chains cannot share one state database, so the mainnet
+    // folder is remembered separately from the testnet one and neither move
+    // drags the other with it.
+    this.settings[this.profile.dataDirSetting] = dir;
     this.dataDir = dir;
     this.rpc = new ZebraRpc({ host: '127.0.0.1', port: this.rpcPort, cookieDir: this.dataDir, timeoutMs: 12000 });
     this.saveSettings(this.settings);

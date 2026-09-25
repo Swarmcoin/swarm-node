@@ -1,0 +1,62 @@
+{
+  "schema": "swarm-network-manifest/1",
+  "status": "TEST FIXTURE ONLY. Not the SWARM mainnet definition. The genesis hash below is a made-up value and the three destinations are addresses minted for this test; the real ones are generated at the launch ceremony and no build carries them yet.",
+  "identity": {
+    "chain": "SWARM",
+    "ticker": "SWM",
+    "reward_nickname": "honey",
+    "network_name": "SwarmMainnet",
+    "network_kind": "SwarmProduction",
+    "network_magic": [83, 87, 77, 78],
+    "network_magic_ascii": "SWMN",
+    "light_wallet_chain_label": "swarm-mainnet",
+    "is_testnet": false
+  },
+  "consensus": {
+    "implementation": "zebrad with Network::SwarmMain",
+    "disable_pow": false,
+    "checkpoints": false,
+    "coinbase_maturity_blocks": 100,
+    "accepted_transaction_versions": [5, 6]
+  },
+  "economics": {
+    "source_spec": "specs/ECONOMICS.md v0.4",
+    "atomic_unit_per_coin": 100000000,
+    "era0_block_reward_coins": 6.25,
+    "miner_percent": 80,
+    "slow_start_interval": 0,
+    "pre_blossom_halving_interval": 840000,
+    "halving_interval_blocks": 1680000,
+    "funding_stream_height_range": { "start": 1, "end": 50399999 },
+    "recipients": [
+      {
+        "label": "Core Development",
+        "swarm_slot": "core_development",
+        "upstream_slot": "ECC",
+        "numerator": 8,
+        "address": "s3XQAEbW98DwCkm2BVbeXnkjYCHTfbVSdQH"
+      },
+      {
+        "label": "Grants & Ecosystem",
+        "swarm_slot": "grants_ecosystem",
+        "upstream_slot": "MajorGrants",
+        "numerator": 4,
+        "address": "s3Ya32FvTepiaNQVZbE7outyXuvFe1rqmbF"
+      },
+      {
+        "label": "Community & Development Reserve",
+        "swarm_slot": "community_reserve",
+        "upstream_slot": "ZcashFoundation",
+        "numerator": 8,
+        "address": "s3keLR3h9JgxCarwHpaRDptdR4nZNXD6qBv"
+      }
+    ]
+  },
+  "genesis": {
+    "hash": "11112222333344445555666677778888999900001111222233334444fedcba98",
+    "note": "A FIXTURE value. The real SWARM mainnet genesis is produced at the launch ceremony from a public unpredictable input."
+  },
+  "ports": { "p2p": 28233, "rpc": 28232 },
+  "seed_peers": ["seed.example.invalid:28233"],
+  "sync_gate": { "min_peers": 1, "max_tip_age_seconds": 900 }
+}
