@@ -1,6 +1,8 @@
 node_modules/
 dist/
 release/
+release-mac-signed/
+staging/
 resources/bin/
 *.log
 .DS_Store

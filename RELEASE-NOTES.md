@@ -151,27 +151,12 @@ If it still does nothing on an older distribution, run it with
 Pick the one that matches your Mac:  > About This Mac. An arm64 build will
 not run on an Intel Mac.
 
-**macOS will refuse to open it the first time, and here is why.** This build is
-**not signed and not notarised** — an Apple Developer account is a purchase the
-project has not made yet. So macOS says *"SWARM Node can't be opened because
-Apple cannot check it for malicious software"*.
-
-To open it once, after dragging it to Applications:
-
-1. Find **SWARM Node** in Applications.
-2. **Right-click** it (or hold Control and click) and choose **Open**.
-3. The same warning appears, but now with an **Open** button. Click it.
-
-You only do that once. If the Open button does not appear, remove the
-quarantine flag from a terminal instead:
-
-```
-xattr -dr com.apple.quarantine "/Applications/SWARM Node.app"
-```
-
-Before you trust any of that, check the file you downloaded matches the one
-that was built — see the checksum step below, using `shasum -a 256 <file>` on
-macOS or `sha256sum <file>` on Linux.
+These historical Mac test packages are **unsigned and not notarized**. They
+are unsuitable for ordinary browser-download distribution. The Developer ID
+build and its Gatekeeper checks are documented in `docs/MAC-DISTRIBUTION.md`.
+If macOS reports a damaged or unverified app, retain the DMG for diagnosis;
+removing its quarantine flag is not a release fix. Check its SHA-256 against
+the matching `SHA256SUMS` and use a signed, notarized release once verified.
 
 ### Windows will warn you, and here is why
 

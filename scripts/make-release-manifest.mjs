@@ -14,11 +14,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const requireGitCommit = () => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
 const outDir = process.argv[2] || 'out';
 const platformKey = process.argv[3] || `${process.platform}-${process.arch}`;
+const signed = process.argv.includes('--signed');
+const notaryIdIndex = process.argv.indexOf('--notary-submission');
+const notarySubmission = notaryIdIndex >= 0 ? process.argv[notaryIdIndex + 1] : null;
+if (signed && (!platformKey.startsWith('darwin') || !/^[a-f0-9-]{36}$/i.test(notarySubmission || ''))) {
+  throw new Error('Signed macOS manifests require --notary-submission <UUID>');
+}
 
 const read = (p) => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const pkg = read('package.json');
@@ -44,17 +52,18 @@ const manifest = {
   version: pkg.version,
   platform: platformKey,
   built_at_utc: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
-  git_commit: process.env.GITHUB_SHA || null,
+  git_commit: signed ? requireGitCommit() : (process.env.GITHUB_SHA || requireGitCommit()),
   git_ref: process.env.GITHUB_REF || null,
   workflow_run: process.env.GITHUB_RUN_ID
     ? `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : null,
   runner_image: process.env.ImageOS || process.env.RUNNER_OS || null,
-  signed: false,
-  signing_note: isMac
-    ? 'Unsigned and un-notarised. macOS refuses the first launch: right-click (or Control-click) the app and choose Open, '
-      + 'or run  xattr -dr com.apple.quarantine "/Applications/SWARM Node.app"  once. See RELEASE-NOTES.md.'
-    : 'Unsigned. Make the AppImage executable before running it:  chmod +x SWARM-Node-*.AppImage  . See RELEASE-NOTES.md.',
+  signed,
+  notarized: signed,
+  notary_submission_id: notarySubmission,
+  signing_note: signed
+    ? 'Developer ID Application signed; app and DMG notarized and stapled. Verify Gatekeeper after a fresh browser download.'
+    : 'Unsigned development build; not for browser-download distribution.',
   auto_update: false,
   app_id: 'green.swarm.node',
   network: {

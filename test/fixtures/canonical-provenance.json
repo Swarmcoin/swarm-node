@@ -5,14 +5,15 @@
     "test/renderer-parity.test.js compares the app's own generator against that",
     "fixture byte for byte, in CI, where the planning repository does not exist.",
     "A second test re-renders with the real renderer when it IS present, and fails",
-    "if the fixture has gone stale."
+    "if the fixture has gone stale.",
+    "2026-09-25: renderer gained an explicit testnet-only identity guard; source hash refreshed after manifest, rendered TOML and fixture hashes remained identical."
   ],
-  "captured_utc": "2026-09-21T17:59:41Z",
+  "captured_utc": "2026-09-25T14:14:00Z",
   "network_name": "SwarmTestnet",
   "genesis_hash": "045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28",
   "renderer": {
     "path": "scripts/swarm/render_config.py (private planning repository D:/privacy)",
-    "sha256": "33133e627d3b85527401aa36244cbec4910ec7cce9bdaa35673fb210d1a39840"
+    "sha256": "b3f47c3c21cf4cab578a96dc5a775173d179724f5a0e649abf78fdd640cf46cb"
   },
   "manifest": {
     "path": "network/swarm-testnet/manifest.json (private planning repository D:/privacy)",
