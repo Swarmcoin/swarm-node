@@ -1,0 +1,206 @@
+{
+  "schema": "swarm-network-manifest/1",
+  "status": "SWARM mainnet network definition, rendered from network/swarm-mainnet/manifest.template.json with the launch-ceremony values. Rendering is not a launch: nothing here starts a node, opens a port or moves a coin.",
+  "normative_sources": [
+    "docs/SWARM-MAINNET-PROFILE.md (the [network.swarm_main] contract)",
+    "specs/ECONOMICS.md v0.4 (reward allocation and monetary base)",
+    "network/swarm-testnet/manifest.json (schema, and every value the production profile does not change)",
+    "network/swarm-rehearsal-main/manifest.json (the same production profile, rehearsed on a disposable chain)"
+  ],
+  "identity": {
+    "chain": "SWARM",
+    "ticker": "SWM",
+    "reward_nickname": "honey",
+    "network_name": "SwarmMainnet",
+    "network_kind": "SwarmProduction",
+    "network_magic": [
+      83,
+      87,
+      77,
+      78
+    ],
+    "network_magic_ascii": "SWMN",
+    "light_wallet_chain_label": "swarm-mainnet",
+    "transaction_domain": "0x53574d31 (SWM1), DomainRegistry::SWARM_PRODUCTION",
+    "identity_note": "network_kind is SwarmProduction, the desktop app's name for this profile; the node's own name for the network is SwarmMainnet, and it is never upstream Zcash Mainnet."
+  },
+  "consensus": {
+    "implementation": "Zebra 6.3.0 with the SwarmMain profile, unmodified consensus and cryptography",
+    "proof_of_work": "Equihash 200,9, inherited and unchanged",
+    "disable_pow": false,
+    "checkpoints": false,
+    "target_difficulty_limit": "07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "target_difficulty_limit_note": "Compiled into the node on SwarmMain; it is not configurable and does not appear in zebrad.toml.",
+    "minimum_difficulty_exception": false,
+    "accepted_transaction_versions": "V5 and V6 from height 1; V1-V4 rejected in blocks and the mempool; the genesis coinbase at height 0 is exempt",
+    "unshielded_coinbase_spends": false,
+    "difficulty_adjustment": "inherited Zcash per-block retarget, unchanged",
+    "target_spacing_seconds": 75,
+    "coinbase_maturity_blocks": 100,
+    "activation_heights": {
+      "BeforeOverwinter": 1,
+      "Overwinter": 1,
+      "Sapling": 1,
+      "Blossom": 1,
+      "Heartwood": 1,
+      "Canopy": 1,
+      "NU5": 1,
+      "NU6": 1,
+      "NU6.1": 1,
+      "NU6.2": 1,
+      "NU6.3": 1
+    }
+  },
+  "genesis": {
+    "hash": "01c34428b9e67cdd8345e0b365aaa37dd8d2d65d3869e0e5d77d567f2c39afdd",
+    "time_unix": 1790425197,
+    "time_utc": "2026-09-26T12:19:57Z",
+    "compact_target": "2007ffff",
+    "start_nonce": "0000000000000000000000000000000000000000000000000000000000000000",
+    "upstream_fixture": "zebra-test/src/vectors/block-test-0-000-000.txt",
+    "upstream_fixture_hash": "05a60a92d99d85997cce3b87616c089f6124d7342af37106edc76126334a2c38",
+    "hex_file": "genesis.hex",
+    "generator_manifest_file": "genesis-manifest.json",
+    "spendable_outputs": 0,
+    "premine": "none; upstream excludes genesis outputs from the UTXO set",
+    "hex_file_sha256": "6e34c9383348957251ed5984d4b83da14e7a3f52860ef1868047ceb3b37f29fb",
+    "time_rule": "The header time must be in the PAST when the network starts. A block's time must exceed the median time past of its ancestors, and for block 1 that median is the genesis time, so a future genesis time blocks block 1 until the wall clock passes it.",
+    "generator": {
+      "tool": "privacy-miner genesis",
+      "note": "The genesis tool takes no --network: the block is the unchanged upstream fixture with a new header time, the fixed target 2007ffff and a solved nonce, so it is network-independent. The SwarmMain profile pins it by hash."
+    },
+    "hex": "040000000000000000000000000000000000000000000000000000000000000000000000db4d7a85b768123f1dff1d4c4cece70083b2d27e117b4ac2e31d087988a5eac400000000000000000000000000000000000000000000000000000000000000006db8b76affff0720000000000000000000000000000000000000000000000000000000000000000ffd4005008bc48eff974ac18315642a91a49bbf03053be7cb21e4ff10ab5d9229a64853b5262003d20419fe823711e713eb614482edea04c166d4b72bf26af67a00923477372e7de81055451c4af6e27c68a72c58b970260107d6ebd6024ced440112bd969f86ceade71634b52a3a5edc288adea87ed2a336d24e04990808c946210962e3b7e8945b71be6f36b910cb76b1f0f4ff7f421970f1a184db6a6bde623a0340513b3703ac3e2b2b034ed439238966d905fbf13fb1a4d68ccc4efbfb9e08c933378bd1c0c38d56c32bb45e8154e042f0d7d4260e51c57c20a0496629233a59c02cd553bf96dc94338e0ba23061caa3a1bd4400757ca63285b9fc3e68045630dcb145ef0fcf01a3a38e5f8e6321229d37fb0e93bb79680602e6c27bb69ee7726209e0ae3e30c5122203b8b9dd0fa922313167822ecb26bbe939855c38efcbb10d597e09d46b33c553ea2b4ec68079c636085aed2219e64cf1d16a4b30f578f5aee9afd9536d2838e5a2619550a328a4b2cddc64f8116ac87d45831cfd86969b926d8bf97216825562133af510f9ce3d21602f29ae929ba99bcd029038bcc0723ea35fe3ac18159bb6da6294a55164f5ef126cee22f0801fe8412a19861558d5af59624be3e6c226604d42e4b97cbf2c668f75dcdbd5e12ae5d311c5cb36bd1cbbabd43664ca1b5db9a2ca7d279247749d4a940ee1beb9013b098be369a6dc02bd4733993d747f4a12e5addc793e4ba3076749e87085483dd546b8d366c696a4b900fb10178a062fce47f133c024ccae360e122f1a3252ae2aa50328037833aff3e504727bced9011f432ecd0e11d1eff3e41cd6d3c1a486b6f23749f78f2c5fbaa71df73fe55bc87604921fa4cd62b0f3e14c232fa6261d605e1867d0c0439c446919fa7be91b67717fb7ce68841c5fe1201d095ee2c9c76a5f22aedffdd940da018c25470fd6e411b157d0972d5affbd53001432cd0220bf49ba86956da35012c33de27a7e385895ad1f1247bec57618c7f6eb4084c88b45fc5a196059b8002c289411c9db68e9d52115f7ebfceb721ac578e10402fcc084dff3e97bf9c154fd61b8cde5a97a5d2e5a0fa2496341991ec373af04cba44cc4b939a0b7b97a1a7f1f22bcf24ba3dbb2a3a16fba9f395efedb7c1f556f52c0de216737ea3ff9832376545ad2011d8d500569a2cafc18e190cf9960988110c6ec4927c5bbd009c0de8a2002a5c7cee151eccb29996cab1d99b79d135b8193015fb2fbd491993b89f4256ad4189fdf04242c338c40d6768ddf5c12eed94f9cfdd61b9bba160c335f81a7e8ef5f926ba1055f503a99feed3ccaec212edeb60d13cef583c183320a397fd0f357ced76027c563ae85cde85ab910e64ea05d8ac1cbb8ffd5584629bc20d26dd395bf22a9545fe7674a75d77d6f4b028748aad1503cada29fc5558b469bc2348a15e773125eef813810a078d0c0c4b27d60ec3650423847fb032bae34dee2e577f773619ef42733ad89cf7c995e0dd54d1df02122917bb6355a1f4d88a9a47e990b60032cdf47761c3133977cc1fa89aa8f691420b8cb4031b3e33a15f098898da4c67309ecbaf70243be24be14c79aca00b7a50df9dd1560ba606efd9e85d13e8f1690c57b80cc45c70d03044f224316f64b7c3d4ed20f91e536408d2bb9491792cb095f2b41d5ed3036a21e01b18c363516dfd5bf44d2584f5a696b9a940bd71fb4f3e2d664528d914d03d15530674550b2bbd6a954c797dc97a0bac3b60426e08865c58e1cfeb50a4711b176a2490c689aa7d501443219ae8e373eb90232188c38c4ea99565913e694b97bad96a38a83ff49ab29a799950d97cd73f9ef84945437f6218a99179ea6393da6200b973ca31d7054174cc54e9a1765b405fc0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff071f0104455a6361736830623963346565663862376363343137656535303031653335303039383462366665613335363833613763616331343161303433633432303634383335643334ffffffff010000000000000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000",
+    "hex_sha256": "6e34c9383348957251ed5984d4b83da14e7a3f52860ef1868047ceb3b37f29fb",
+    "hex_note": "The genesis block bytes. A fresh node normally receives block 0 from a peer; Zebra only inserts genesis by itself on Regtest. When no peer has served it, SWARM Node hands these bytes to its own node once and checks the resulting hash."
+  },
+  "economics": {
+    "source_spec": "specs/ECONOMICS.md v0.4",
+    "atomic_unit_per_coin": 100000000,
+    "era0_block_reward_coins": 6.25,
+    "miner_percent": 80,
+    "miner_note": "The miner receives the remainder of the subsidy after the three allocations, plus all transaction fees.",
+    "slow_start_interval": 0,
+    "pre_blossom_halving_interval": 840000,
+    "halving_interval_blocks": 1680000,
+    "extend_funding_stream_addresses_as_required": true,
+    "lockbox_disbursements": [],
+    "deferred_slot_used": false,
+    "funding_stream_height_range": {
+      "start": 1,
+      "end": 50399999,
+      "end_is_exclusive": true,
+      "note": "One range covers the whole emission schedule: every block with a non-zero reward."
+    },
+    "recipients": [
+      {
+        "label": "Core Development",
+        "upstream_slot": "ECC",
+        "upstream_rpc_name_post_nu6": "Electric Coin Company",
+        "swarm_slot": "core_development",
+        "numerator": 8,
+        "percent": 8,
+        "era0_coins_per_block": 0.5,
+        "era0_zatoshi_per_block": 50000000,
+        "address": "s3fLmEHc1xqs8KAe7QS7oupkhuGDjidV4eq",
+        "address_type": "SWARM production P2SH multisig (s3...)",
+        "signing_threshold": "2 of 3"
+      },
+      {
+        "label": "Grants & Ecosystem",
+        "upstream_slot": "MajorGrants",
+        "upstream_rpc_name_post_nu6": "Zcash Community Grants NU6",
+        "swarm_slot": "grants_ecosystem",
+        "numerator": 4,
+        "percent": 4,
+        "era0_coins_per_block": 0.25,
+        "era0_zatoshi_per_block": 25000000,
+        "address": "s3RiGvK5JzS8eh6ywN3K22f2LzDAhicgFuq",
+        "address_type": "SWARM production P2SH multisig (s3...)",
+        "signing_threshold": "2 of 3"
+      },
+      {
+        "label": "Community & Development Reserve",
+        "upstream_slot": "ZcashFoundation",
+        "upstream_rpc_name_post_nu6": "Zcash Foundation",
+        "swarm_slot": "community_reserve",
+        "numerator": 8,
+        "percent": 8,
+        "era0_coins_per_block": 0.5,
+        "era0_zatoshi_per_block": 50000000,
+        "address": "s3g3pzQVhvVX17bzrrEN3vmcXZWSpj7KFVp",
+        "address_type": "SWARM production P2SH multisig (s3...)",
+        "signing_threshold": "2 of 3"
+      }
+    ],
+    "immutability": "The percentages are part of the network definition every node loads. There is no admin key, vote, on-chain parameter or RPC that can change them. A destination can only change through a protocol upgrade that participants adopt together.",
+    "rpc_naming_note": "getblocksubsidy prints the upstream slot names. ECC is Core Development, MajorGrants is Grants & Ecosystem, ZcashFoundation is the Community & Development Reserve."
+  },
+  "ports": {
+    "public_p2p": 28233,
+    "public_p2p_note": "The SwarmMain default. Written to zebrad.toml so an operator can read it, never so that the network can be changed.",
+    "rpc": 28232,
+    "rpc_note": "Loopback only. The node RPC is never exposed publicly; cookie authentication stays enabled.",
+    "lightwallet_grpc": 8443,
+    "lightwallet_grpc_note": "Zaino behind TLS on lwd-main.swarm.green; 8443 is the public TLS port, not Zaino's own listener."
+  },
+  "seed_peers": [
+    "seed-main.swarm.green:28233"
+  ],
+  "seed_peers_note": "There is no DNS seeder for a custom network, so this is a static name with one A record per seed node. Zebra makes one outbound connection per IP, so a second seed needs its own public IP.",
+  "light_wallet_servers": [
+    "lwd-main.swarm.green:8443"
+  ],
+  "light_wallet_servers_note": "The light-wallet endpoint the SWARM Wallet uses on this network. TLS, no plaintext fallback.",
+  "destination_addresses": {
+    "state": "produced by the launch key ceremony",
+    "shape": "2-of-3 multisig per destination; the same three signers in a different key ORDER per fund, so each fund has its own redeem script, its own script hash and its own s3 address",
+    "tool": "swarm-treasury (offline) and swarm-keytool, from the pinned mainnet tool release",
+    "requirement": "Every recipient must be a SWARM production P2SH address (s3...). zebra-consensus asserts 'address must be P2SH' and the node panics on anything else.",
+    "custody": "Whoever holds two of the three key shares controls that destination's coins. Custody is the owner's; no agent ever holds a share.",
+    "see": "network/swarm-mainnet/DESTINATIONS.md"
+  },
+  "operations": {
+    "baseline_miner": {
+      "address": "s3R1bWZPrRCtKL122ZN6uySu1ewk2ku849C",
+      "script_hash": "22333f916796a8cdb2656fa3fb0baa0813cb60f0",
+      "redeem_script": "5121029cad2d45cf8e985627fb4cf7d206b315729643e8ae1a3784d69998023a3e81bc51ae",
+      "public_keys": [
+        "029cad2d45cf8e985627fb4cf7d206b315729643e8ae1a3784d69998023a3e81bc"
+      ],
+      "signing_threshold": "1 of 1",
+      "policy_fingerprint": "9698a28eb0acd154e9436454dfdd27b4",
+      "tool": "swarm-treasury policy assemble --fund Mining --threshold 1 --network swarmmain",
+      "custody": "the owner's. The key share lives on the owner's devices; no agent holds it.",
+      "note": "The baseline miner payout is a property of this deployment, not of the chain. It is also set in the host .env as SWARM_MINER_ADDRESS and changed with `swarm-mainnet rotate-miner`. Coinbase outputs mature after 100 blocks."
+    }
+  },
+  "rendered": {
+    "by": "scripts/swarm/render_mainnet_manifest.py",
+    "from_template": "network/swarm-mainnet/manifest.template.json",
+    "ceremony_input": "ceremony.json",
+    "ceremony_input_sha256": "db03e5483d7320d2f98d6285523d5108ce6315c191518eb1096b3696c16eb8e6",
+    "at_utc": "2026-09-26T12:23:33Z",
+    "notes": "SWARM mainnet launch 2026-09-26. Genesis generated on 64.94.84.101 with release-ae7cfaf92/privacy-miner from the upstream fixture block-test-0-000-000.txt (sha256 97297f9ec45022c57e3c10b590ab4bf058f952ecb4090ea763713a12199606e9); header hash independently recomputed in Python. Zero spendable outputs, no premine. Baseline miner payout s3R1bWZPrRCtKL122ZN6uySu1ewk2ku849C."
+  },
+  "_embedded_by": "scripts/embed-network.mjs — SWARM Node",
+  "_embedded_from": "D:/privacy/network/swarm-mainnet/manifest.json",
+  "_embedded_at": "2026-09-26",
+  "sync_gate": {
+    "min_peers": 1,
+    "max_behind_blocks": 2,
+    "quiet_seconds": 45,
+    "patience_seconds": 600,
+    "max_tip_age_seconds": 7200,
+    "tip_oracle_url": "https://lwd.swarm.green:443",
+    "note": "Tip age is a weak hint only. Block spacing averages 60-90 s but is a Poisson process, so multi-minute gaps are ordinary and a rule that needs a young tip holds back a synced node."
+  },
+  "links": {
+    "website": "https://swarm.green",
+    "explorer": "https://explore.swarm.green",
+    "swarm_map": "https://swarm.green/#map",
+    "x": "https://x.com/swarm_coin",
+    "source": "https://github.com/Swarm-Official"
+  },
+  "contact_email": "swarmofficial@atomicmail.io",
+  "channels_note": "Set by the owner on 2026-09-21. No other account or address speaks for the project. The project never asks for recovery phrases, private keys or payments through any channel."
+}
