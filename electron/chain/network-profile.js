@@ -86,7 +86,14 @@ const PROFILES = [
     // Funding-stream destinations Zebra will accept on this network. Zebra
     // asserts "address must be P2SH" and panics on anything else.
     fundingAddressPrefix: 't2',
-    coinsHaveValue: false
+    coinsHaveValue: false,
+    // The project's light-wallet host FOR THIS NETWORK. Two things read it:
+    // the independent tip oracle the mining gate consults, and the seed's
+    // published status file. Both were hard-coded to the testnet host, so a
+    // mainnet build asked the TESTNET server how tall the SWARM main chain
+    // was, got nothing it could use, and could not tell a synced node from a
+    // node still catching up.
+    lightWalletHost: 'lwd.swarm.green'
   },
   {
     id: 'swarm-mainnet',
@@ -114,7 +121,8 @@ const PROFILES = [
     // prefix assignment, so no such address is ever constructed or accepted.
     unifiedPrefixes: ['swm1'],
     fundingAddressPrefix: 's3',
-    coinsHaveValue: true
+    coinsHaveValue: true,
+    lightWalletHost: 'lwd-main.swarm.green'
   }
 ];
 
@@ -229,6 +237,22 @@ function classifyPrefix(profile, raw) {
   // Upstream Zcash: t1/t3 transparent, u1 unified, zs/zc shielded.
   if (/^(t1|t3|u1)/i.test(s)) return { kind: null, mode: null, wrongNetwork: 'upstream' };
   return { kind: null, mode: null, wrongNetwork: null };
+}
+
+/**
+ * The two https addresses that answer "how tall is this chain" for a profile.
+ *
+ * They must follow the network. A mainnet node measured against the testnet's
+ * lightwalletd is not measured at all: the app shows no network height, and
+ * the mining gate never sees the tip it is supposed to compare against.
+ */
+function lightWalletUrls(profile) {
+  const p = requireProfile(profile.id || profile);
+  return {
+    host: p.lightWalletHost,
+    tipOracleUrl: `https://${p.lightWalletHost}:443`,
+    statusUrl: `https://${p.lightWalletHost}/status.json`
+  };
 }
 
 /** How to describe this network's payout addresses in one phrase. */
@@ -558,6 +582,7 @@ module.exports = {
   profileForManifestOrKind,
   classifyPrefix,
   addressHint,
+  lightWalletUrls,
   checkNodeChain,
   checkNodeGenesis,
   loadProfileManifest,

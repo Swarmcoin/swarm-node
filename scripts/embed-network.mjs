@@ -76,7 +76,13 @@ const out = {
     // The independent view of the tip. A different machine running different
     // code on the same chain, which is the only honest way to answer "am I
     // behind" — see electron/chain/tip-oracle.js and defect N-1.
-    tip_oracle_url: 'https://lwd.swarm.green:443',
+    //
+    // PER NETWORK. This was the testnet host whatever was being embedded, so
+    // the mainnet definition sent a mainnet node to ask the TESTNET's
+    // lightwalletd how tall the main chain was. The app then had no network
+    // height at all and could not tell a synced node from one still catching
+    // up — which is the figure the mining gate is built on.
+    tip_oracle_url: NP.lightWalletUrls(profile).tipOracleUrl,
     note:
       'Tip age is a weak hint only. Block spacing averages 60-90 s but is a Poisson process, ' +
       'so multi-minute gaps are ordinary and a rule that needs a young tip holds back a synced node.'

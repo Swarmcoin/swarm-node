@@ -690,7 +690,12 @@ app.whenReady().then(() => {
   // disk, because a stale "right now" number is a false one.
   netStatus = new NetworkStatus({
     genesisHash: (manifest.genesis || {}).hash || null,
-    chainLabel: (manifest.identity || {}).light_wallet_chain_label || null
+    chainLabel: (manifest.identity || {}).light_wallet_chain_label || null,
+    // The seed that publishes these numbers is a different machine on each
+    // network. This was a constant naming the testnet's host, so a mainnet
+    // build asked the testnet server about the main chain and (correctly)
+    // refused the answer, showing nothing.
+    statusUrl: NP.lightWalletUrls(profile).statusUrl
   });
 
   engine = new ChainEngine({

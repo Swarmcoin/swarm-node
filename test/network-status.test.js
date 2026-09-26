@@ -7,7 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { validate, STATUS_URL } = require('../electron/chain/network-status');
+const { validate, DEFAULT_STATUS_URL, ALLOWED_STATUS_URLS } = require('../electron/chain/network-status');
 
 const EXPECT = {
   genesisHash: '045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28',
@@ -26,8 +26,34 @@ const LIVE = {
   healthy: true
 };
 
-test('the one URL is fixed and is the seed status file', () => {
-  assert.equal(STATUS_URL, 'https://lwd.swarm.green/status.json');
+test('the URLs are fixed, one seed status file per SWARM network', () => {
+  // Still an allow-list - the page has connect-src 'none' and this is the one
+  // outbound request the main process makes for it - but it holds one entry
+  // per network now. It was a single constant naming the TESTNET host, so a
+  // SWARM mainnet build asked the testnet server how tall the main chain was,
+  // refused the answer it got (rightly: another network's genesis) and showed
+  // no network figures at all.
+  assert.equal(DEFAULT_STATUS_URL, 'https://lwd.swarm.green/status.json');
+  assert.deepEqual(ALLOWED_STATUS_URLS, [
+    'https://lwd.swarm.green/status.json',
+    'https://lwd-main.swarm.green/status.json'
+  ]);
+  const NP = require('../electron/chain/network-profile');
+  assert.equal(NP.lightWalletUrls('swarm-mainnet').statusUrl, 'https://lwd-main.swarm.green/status.json');
+  assert.equal(NP.lightWalletUrls('swarm-mainnet').tipOracleUrl, 'https://lwd-main.swarm.green:443');
+  assert.equal(NP.lightWalletUrls('swarm-testnet').tipOracleUrl, 'https://lwd.swarm.green:443');
+  // And the definition a mainnet build carries names the mainnet oracle.
+  const mainnet = require('../electron/net/network-mainnet.json');
+  assert.equal(mainnet.sync_gate.tip_oracle_url, 'https://lwd-main.swarm.green:443');
+});
+
+test('a NetworkStatus takes the URL of its own profile, and nothing else', () => {
+  const { NetworkStatus } = require('../electron/chain/network-status');
+  assert.equal(new NetworkStatus({ statusUrl: 'https://lwd-main.swarm.green/status.json' }).url,
+    'https://lwd-main.swarm.green/status.json');
+  // Anything outside the allow-list falls back; it is never fetched.
+  assert.equal(new NetworkStatus({ statusUrl: 'https://example.invalid/status.json' }).url, DEFAULT_STATUS_URL);
+  assert.equal(new NetworkStatus({}).url, DEFAULT_STATUS_URL);
 });
 
 test('the live payload is accepted and its real numbers survive', () => {

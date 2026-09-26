@@ -24,9 +24,14 @@
 'use strict';
 
 const https = require('https');
+const NP = require('./network-profile');
 
-// One URL.
-const STATUS_URL = 'https://lwd.swarm.green/status.json';
+// One URL, PER NETWORK. This was a constant naming the testnet's light-wallet
+// host, so a SWARM mainnet build asked the testnet server about the main
+// chain; the answer was refused (rightly - its genesis is another network's)
+// and the app showed no network figures at all. The caller passes the URL its
+// profile publishes; see NP.lightWalletUrls.
+const DEFAULT_STATUS_URL = 'https://lwd.swarm.green/status.json';
 const MAX_BYTES = 64 * 1024;
 const TIMEOUT_MS = 10000;
 const MIN_REFRESH_MS = 30 * 1000;   // the file itself regenerates every 30s
@@ -77,9 +82,19 @@ function validate(raw, expect = {}) {
   return { ok: true, data };
 }
 
+// Which URLs this module may ever fetch. The allow-list stays - the page has
+// connect-src 'none' and this is the one outbound request the main process
+// makes on the renderer's behalf - but it now holds one entry per SWARM
+// network instead of one entry, full stop.
+const ALLOWED_STATUS_URLS = Object.freeze(
+  NP.PROFILES.map((p) => NP.lightWalletUrls(p).statusUrl)
+);
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
-    if (url !== STATUS_URL) return reject(new Error('refusing to fetch anything but the network status'));
+    if (!ALLOWED_STATUS_URLS.includes(url)) {
+      return reject(new Error('refusing to fetch anything but the network status'));
+    }
     const req = https.get(url, { timeout: TIMEOUT_MS, headers: { accept: 'application/json' } }, (res) => {
       if (res.statusCode !== 200) {
         res.resume();
@@ -103,9 +118,16 @@ function fetchJson(url) {
 }
 
 class NetworkStatus {
-  /** @param {object} expect {genesisHash, chainLabel} from the embedded manifest */
+  /**
+   * @param {object} expect {genesisHash, chainLabel, statusUrl}
+   *   genesisHash / chainLabel come from the embedded manifest and are what
+   *   another network's numbers are refused by; statusUrl comes from the
+   *   running profile, because the seed that publishes them is a different
+   *   machine on each network.
+   */
   constructor(expect = {}) {
     this.expect = expect;
+    this.url = ALLOWED_STATUS_URLS.includes(expect.statusUrl) ? expect.statusUrl : DEFAULT_STATUS_URL;
     this.value = null;        // last accepted payload
     this.fetchedAt = 0;
     this.error = null;
@@ -116,7 +138,7 @@ class NetworkStatus {
   async get({ force = false } = {}) {
     const now = Date.now();
     if ((force || now - this.fetchedAt > MIN_REFRESH_MS) && !this.inFlight) {
-      this.inFlight = fetchJson(STATUS_URL)
+      this.inFlight = fetchJson(this.url)
         .then((raw) => {
           const v = validate(raw, this.expect);
           if (!v.ok) throw new Error(v.error);
@@ -138,9 +160,9 @@ class NetworkStatus {
       ageMs,
       stale: ageMs != null && ageMs > STALE_AFTER_MS,
       error: this.error,
-      source: STATUS_URL
+      source: this.url
     };
   }
 }
 
-module.exports = { NetworkStatus, validate, STATUS_URL, STALE_AFTER_MS };
+module.exports = { NetworkStatus, validate, DEFAULT_STATUS_URL, ALLOWED_STATUS_URLS, STALE_AFTER_MS };

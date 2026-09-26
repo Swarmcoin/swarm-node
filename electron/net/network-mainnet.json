@@ -191,7 +191,7 @@
     "quiet_seconds": 45,
     "patience_seconds": 600,
     "max_tip_age_seconds": 7200,
-    "tip_oracle_url": "https://lwd.swarm.green:443",
+    "tip_oracle_url": "https://lwd-main.swarm.green:443",
     "note": "Tip age is a weak hint only. Block spacing averages 60-90 s but is a Poisson process, so multi-minute gaps are ordinary and a rule that needs a young tip holds back a synced node."
   },
   "links": {
