@@ -19,10 +19,16 @@ name: Build Linux and macOS packages
 on:
   workflow_dispatch:
     inputs:
-      binaries_tag:
-        description: 'Pre-release tag holding the pinned node and miner'
+      network_profile:
+        description: 'Which SWARM network this build is for: swarm-testnet or swarm-mainnet'
         required: false
-        default: 'vendored-binaries-prefix-1'
+        default: 'swarm-testnet'
+        type: choice
+        options: [swarm-testnet, swarm-mainnet]
+      binaries_tag:
+        description: 'Override the pre-release tag holding the pinned node and miner (the pinned HASHES are never overridden)'
+        required: false
+        default: ''
       platforms:
         description: 'Which to build: all, linux, mac-arm64, mac-x64'
         required: false
@@ -38,21 +44,35 @@ jobs:
     outputs:
       matrix: ${{ steps.select.outputs.result }}
     steps:
+      # The readiness check below reads build/binary-pins.json, so this job
+      # needs the repository too.
+      - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         id: select
         env:
           PLATFORMS: ${{ inputs.platforms || 'all' }}
+          PROFILE: ${{ inputs.network_profile || 'swarm-testnet' }}
         with:
           script: |
-            const rows = [{"key":"linux-x64","runs-on":"ubuntu-22.04","builder":"--linux","node_asset":"zebrad-linux-x64","miner_asset":"privacy-miner-linux-x64","node_sha":"f0a809f6aa8671e7b47c1557d4c524293d9c0e7871648812f6383dc37dfd0896","miner_sha":"740a94a24caa0500e07bcd6561bc82a0a164b7d10b006b8ba77a99d65d05abe6","expect":"x86_64|amd64","arch":"x64"},{"key":"darwin-arm64","runs-on":"macos-14","builder":"--mac --arm64","node_asset":"zebrad-darwin-arm64","miner_asset":"privacy-miner-darwin-arm64","node_sha":"61a2333ff660aa55f4351f88654bc4ad9f6041b65b0bf5349cd57d95e25160cb","miner_sha":"b556538fc0e43a0842c1a76005e947334bcbcfc622afc737bce379326c93358a","expect":"mac-arm64","arch":"arm64"},{"key":"darwin-x64","runs-on":"macos-15-intel","builder":"--mac --x64","node_asset":"zebrad-darwin-x64","miner_asset":"privacy-miner-darwin-x64","node_sha":"486cfa2fb459427386705ae7bde05b172e58ae3fa794dd73d36dbd2d31f88748","miner_sha":"e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68","expect":"mac-x64","arch":"x64"}];
+            const rows = [{"key":"linux-x64","runs-on":"ubuntu-22.04","builder":"--linux","expect":"x86_64|amd64","arch":"x64"},{"key":"darwin-arm64","runs-on":"macos-14","builder":"--mac --arm64","expect":"mac-arm64","arch":"arm64"},{"key":"darwin-x64","runs-on":"macos-15-intel","builder":"--mac --x64","expect":"mac-x64","arch":"x64"}];
             const aliases = {linux: 'linux-x64', 'mac-arm64': 'darwin-arm64', 'mac-x64': 'darwin-x64'};
             const requested = process.env.PLATFORMS;
             if (requested !== 'all' && !aliases[requested]) throw new Error(`Unknown platform: ${requested}`);
             const selected = rows.filter(row => requested === 'all' || row.key === aliases[requested]);
-            const ready = selected.filter(row => /^[a-f0-9]{64}$/.test(row.node_sha) && /^[a-f0-9]{64}$/.test(row.miner_sha));
-            if (requested !== 'all' && ready.length !== selected.length) throw new Error(`Binary hashes are missing for ${requested}`);
-            if (!ready.length) throw new Error('No platforms have verified binary hashes');
-            for (const row of selected.filter(row => !ready.includes(row))) core.notice(`Skipping ${row.key}: binary hashes pending`);
+            // A platform is buildable only when this profile pins a real
+            // SHA-256 for both of its binaries. An unpinned platform is
+            // skipped, never built from whatever the release happens to hold.
+            const pins = JSON.parse(require('fs').readFileSync('build/binary-pins.json', 'utf8'));
+            const profile = pins.profiles[process.env.PROFILE];
+            if (!profile) throw new Error(`No binary pins for network profile ${process.env.PROFILE}`);
+            const hex = (v) => /^[a-f0-9]{64}$/.test(String(v || ''));
+            const ready = selected.filter(row => {
+              const pin = profile.platforms[row.key];
+              return pin && hex(pin.node_sha) && hex(pin.miner_sha) && (profile.layout !== 'archive' || hex(pin.archive_sha));
+            });
+            if (requested !== 'all' && ready.length !== selected.length) throw new Error(`Binary hashes are missing for ${requested} on ${process.env.PROFILE}`);
+            if (!ready.length) throw new Error(`No platforms have verified binary hashes for ${process.env.PROFILE}`);
+            for (const row of selected.filter(row => !ready.includes(row))) core.notice(`Skipping ${row.key}: ${process.env.PROFILE} binary hashes pending`);
             return {include: ready};
   build:
     needs: select-platforms
@@ -89,48 +109,21 @@ jobs:
       # ---- the two binaries this app runs -------------------------------
       #
       # Fetched, never rebuilt here, so the thing that ships is the thing that
-      # was tested. They come from a pre-release of THIS private repository,
-      # because a private repo's token cannot read another repository's
-      # workflow artifacts. The SHA-256 gate below is what actually decides.
-      - name: Download the pinned binaries
+      # was tested. WHICH binaries, and their SHA-256s, are data: build/binary-pins.json,
+      # read by scripts/fetch-pinned-binaries.mjs. swarm-testnet takes them
+      # from a pre-release of THIS private repository (a private repo's token
+      # cannot read another repository's workflow artifacts); swarm-mainnet
+      # takes one archive per platform from the PUBLIC privacy-zebra release.
+      # The SHA-256 gate inside the script is what decides, and an overridden
+      # tag does not override a hash.
+      - name: Fetch, verify and place the pinned binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SWARM_NETWORK_PROFILE: ${{ inputs.network_profile || 'swarm-testnet' }}
         shell: bash
         run: |
           set -euo pipefail
-          tag='${{ github.event.inputs.binaries_tag }}'
-          [ -n "$tag" ] || tag=vendored-binaries-prefix-1
-          mkdir -p resources/bin
-          gh release download "$tag" -R '${{ github.repository }}' \
-            -p '${{ matrix.node_asset }}' -p '${{ matrix.miner_asset }}' -D staging
-          ls -l staging
-
-      - name: Verify and place the binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p resources/bin
-          # The names the app looks for BEFORE the shipped rename, so the same
-          # manifest script handles every platform identically.
-          cp "staging/${{ matrix.node_asset }}"  resources/bin/zebrad
-          cp "staging/${{ matrix.miner_asset }}" resources/bin/privacy-miner
-          chmod +x resources/bin/zebrad resources/bin/privacy-miner
-
-          # swarm-keytool creates spending keys. It must never leave a build
-          # machine inside a miner. Make that impossible, not unlikely.
-          if ls resources/bin | grep -i keytool; then
-            echo "refusing to package a key tool"; exit 1
-          fi
-
-          sha() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
-          for pair in "zebrad ${{ matrix.node_sha }}" "privacy-miner ${{ matrix.miner_sha }}"; do
-            set -- $pair
-            actual=$(sha "resources/bin/$1")
-            if [ "$actual" != "$2" ]; then
-              echo "$1 sha256 $actual does not match the pinned $2"; exit 1
-            fi
-            echo "$1 sha256 $actual OK"
-          done
+          node scripts/fetch-pinned-binaries.mjs --platform '${{ matrix.key }}' ${{ inputs.binaries_tag && format('--tag {0}', inputs.binaries_tag) || '' }}
 
       - name: Record the binary hashes this build may run
         run: node scripts/make-binaries-manifest.mjs

@@ -14,10 +14,16 @@ name: Build Windows installer
 on:
   workflow_dispatch:
     inputs:
-      binaries_tag:
-        description: 'Pre-release tag in this repo holding zebrad.exe and privacy-miner.exe'
+      network_profile:
+        description: 'Which SWARM network this build is for: swarm-testnet or swarm-mainnet'
         required: false
-        default: 'vendored-binaries-prefix-1'
+        default: 'swarm-testnet'
+        type: choice
+        options: [swarm-testnet, swarm-mainnet]
+      binaries_tag:
+        description: 'Override the pre-release tag holding zebrad and privacy-miner (the pinned HASHES are never overridden)'
+        required: false
+        default: ''
   push:
     branches: [main]
     paths-ignore: ['**/*.md']
@@ -55,69 +61,33 @@ jobs:
 
       # ---- the two binaries this app runs -------------------------------
       #
-      # Both are built in Swarm-Official/privacy-zebra from reviewed SWARM forks.
-      # Their exact source revisions are recorded in electron/net/PROVENANCE.md. They are fetched rather than rebuilt, so
+      # Both are built in Swarm-Official/privacy-zebra from reviewed SWARM
+      # forks. Their exact source revisions are recorded in
+      # electron/net/PROVENANCE.md. They are fetched rather than rebuilt, so
       # the thing that ships is the thing that was tested.
       #
-      # They come from a PRE-RELEASE of THIS private repository, not from the
-      # other repository's workflow artifacts. A private repo's GITHUB_TOKEN
-      # cannot read another repository's artifacts, whatever `actions: read`
-      # says — that is what broke run 35636846516. A release asset in the same
-      # repository is readable with the job's own token, and a release in a
-      # private repository is not public.
+      # WHICH ones depends on the network profile, and the answer is data:
+      # build/binary-pins.json, read by scripts/fetch-pinned-binaries.mjs.
       #
-      # This is a transport, not a trust anchor: the SHA-256 check two steps
-      # below is what actually decides, and it is pinned to the hashes the
-      # privacy-zebra runs produced.
-      - name: Download the pinned binaries
+      #   swarm-testnet  a pre-release of THIS private repository. A private
+      #                  repo's GITHUB_TOKEN cannot read another repository's
+      #                  workflow artifacts, whatever `actions: read` says --
+      #                  that is what broke run 35636846516.
+      #   swarm-mainnet  a pre-release of the PUBLIC privacy-zebra repository,
+      #                  where the mainnet tools are published as one archive
+      #                  per platform. A public release asset needs no
+      #                  cross-repository token.
+      #
+      # Either way the release is a transport, not a trust anchor: the SHA-256
+      # gate inside the script is what decides, and it is pinned to the hashes
+      # the privacy-zebra runs printed. An overridden tag does not override a
+      # hash.
+      - name: Fetch, verify and place the pinned binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SWARM_NETWORK_PROFILE: ${{ inputs.network_profile || 'swarm-testnet' }}
         run: |
-          $tag = "${{ github.event.inputs.binaries_tag }}"
-          if (-not $tag) { $tag = "vendored-binaries-prefix-1" }
-          New-Item -ItemType Directory -Force staging/bin | Out-Null
-          gh release download $tag -R ${{ github.repository }} -p "zebrad.exe" -p "privacy-miner.exe" -D staging/bin
-          Get-ChildItem -Recurse staging/bin | Select-Object FullName, Length
-
-      - name: Collect and verify the binaries
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force resources/bin | Out-Null
-
-          function Find-One($name) {
-            $hit = Get-ChildItem -Path staging -Recurse -Filter $name -ErrorAction SilentlyContinue |
-                   Select-Object -First 1
-            if (-not $hit) { throw "$name was not found in any downloaded artifact" }
-            return $hit.FullName
-          }
-
-          # Some artifacts are zipped; expand anything that looks like one first.
-          Get-ChildItem -Path staging -Recurse -Filter *.zip -ErrorAction SilentlyContinue | ForEach-Object {
-            $dest = Join-Path $_.DirectoryName ($_.BaseName + '_x')
-            Expand-Archive -LiteralPath $_.FullName -DestinationPath $dest -Force
-          }
-
-          Copy-Item (Find-One 'zebrad.exe') resources/bin/zebrad.exe -Force
-          Copy-Item (Find-One 'privacy-miner.exe') resources/bin/privacy-miner.exe -Force
-
-          # swarm-keytool.exe creates spending keys. It must never leave the
-          # build machine inside a miner. Make that impossible, not unlikely.
-          Get-ChildItem -Path resources/bin -Filter '*keytool*' -ErrorAction SilentlyContinue | ForEach-Object {
-            throw "refusing to package $($_.Name)"
-          }
-
-          $expected = @{
-            'zebrad.exe'        = 'a26d4ba503b986f1671ef4fd695476ab181e747c67983d0215cddc4eed0d6bc3'
-            'privacy-miner.exe' = '2734b6b5663a82b2046c88e5875e6fa015d9b6ec3eba312d3b89409a8fc34646'
-          }
-          foreach ($name in $expected.Keys) {
-            $actual = (Get-FileHash "resources/bin/$name" -Algorithm SHA256).Hash.ToLower()
-            if ($actual -ne $expected[$name]) {
-              throw "$name sha256 $actual does not match the pinned $($expected[$name])"
-            }
-            Write-Host "$name sha256 $actual OK"
-          }
+          node scripts/fetch-pinned-binaries.mjs --platform win-x64 ${{ inputs.binaries_tag && format('--tag {0}', inputs.binaries_tag) || '' }}
 
       # A clean Windows install has no Visual C++ 2015-2022 runtime, and zebrad
       # will not start without it. Shipping the three DLLs next to the binaries

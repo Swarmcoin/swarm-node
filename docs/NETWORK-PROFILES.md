@@ -81,6 +81,10 @@ At release time the file is produced the same way the testnet one is:
 node scripts/embed-network.mjs <path to network/swarm-mainnet>
 ```
 
+The whole procedure, from the ceremony's five values to a built installer in
+one command, is **docs/MAINNET-EMBED.md**, together with the per-profile binary
+pins in `build/binary-pins.json` and the rehearsal that exercised all of it.
+
 The script reads the profile from the manifest's own identity, validates it
 (genesis present, not a foreign genesis, three `s3…` destinations, one per
 slot) and writes `electron/net/network-mainnet.json`. It refuses anything else.
