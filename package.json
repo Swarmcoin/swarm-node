@@ -1,6 +1,6 @@
 {
   "name": "swarm-node",
-  "version": "0.2.0-mainnet.1",
+  "version": "0.2.0-mainnet.2",
   "description": "SWARM Node \u00e2\u20ac\u201d run a full node of the SWARM testnet and mine with one click. Consent-first, one-click stop, nothing runs hidden.",
   "main": "electron/main.js",
   "author": "SWARM <swarmofficial@atomicmail.io>",
@@ -22,7 +22,8 @@
     "dist:mac": "npm run build:ui && electron-builder --mac",
     "binaries:mainnet": "node scripts/fetch-pinned-binaries.mjs --profile swarm-mainnet",
     "mainnet:embed": "node scripts/embed-network.mjs D:/privacy/network/swarm-mainnet",
-    "mainnet:build": "npm run mainnet:embed && npm run check && npm run build:ui && electron-builder --publish never"
+    "build:profile": "node scripts/set-build-profile.mjs",
+    "mainnet:build": "npm run mainnet:embed && node scripts/set-build-profile.mjs swarm-mainnet && npm run check && npm run build:ui && electron-builder --publish never"
   },
   "dependencies": {
     "react": "^18.3.1",

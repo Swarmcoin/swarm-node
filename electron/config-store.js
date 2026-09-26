@@ -32,6 +32,25 @@ function defaults(manifest) {
     // upstream Zcash. A profile whose definition is not bundled with the build
     // cannot be selected, so this falls back on load.
     networkProfile: 'swarm-testnet',
+    // WHICH BUILD'S SELECTOR set networkProfile above.
+    //
+    // Every install stores swarm-testnet, because that is the shipped default.
+    // Honouring it unconditionally is why a mainnet installer came up on the
+    // testnet: the value looked like a choice and was only ever a default.
+    // This records the network the build was FOR when somebody actually used
+    // the Network selector, so "I deliberately chose the testnet inside the
+    // mainnet app" survives a restart while a leftover default does not. See
+    // chooseStartProfile in electron/chain/network-profile.js.
+    networkProfileChosenForBuild: null,
+    networkProfileChosenAt: null,
+    // Set when a network switch had to drop the payout address because it
+    // belonged to the other network. Shown once, then cleared, so the user is
+    // told rather than left with an empty field they did not empty.
+    payoutClearedReason: null,
+    // Signing out leaves this set, so the app comes back on the outside screen
+    // instead of straight back into the dashboard it just left. Cleared by the
+    // button on that screen.
+    signedOut: false,
     dataDir: null,                 // set on first run to the default chain folder
     // The mainnet chain folder, kept apart from the testnet one: two chains
     // cannot share a state database.

@@ -425,6 +425,117 @@ function loadProfiles(netDir) {
   return PROFILES.map((p) => loadProfileManifest(p, netDir));
 }
 
+// ------------------------------------------------------- which one to start
+
+/**
+ * Which network THIS BUILD is for, read from electron/net/build-profile.json.
+ *
+ * A build carries every definition it has and the user picks one in the app.
+ * Which network it was MADE for used to be recorded only in
+ * release-manifest.json, which sits beside the installer and never travels
+ * inside it — so the packaged app could not tell a mainnet build from a
+ * testnet one, and 0.2.0-mainnet.1 came up on the testnet.
+ *
+ * A missing or unreadable marker is not a failure: it means "the default
+ * build", which is the testnet. It can never name a network this app does not
+ * know, because the id is looked up in the closed list above.
+ */
+function loadBuildProfile(netDir) {
+  const file = path.join(netDir, 'build-profile.json');
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const p = profileById(raw && raw.profile);
+    if (p) return { id: p.id, source: file };
+    return { id: DEFAULT_PROFILE_ID, source: null, error: `${file} names ${JSON.stringify(String((raw || {}).profile || ''))}, which is not a SWARM network profile` };
+  } catch {
+    return { id: DEFAULT_PROFILE_ID, source: null, error: null };
+  }
+}
+
+/**
+ * Which profile this launch runs, and why.
+ *
+ * THE RULE, and the defect it fixes. The app used to honour the stored
+ * `networkProfile` unconditionally. Every install stores `swarm-testnet` —
+ * it is the shipped default — so a mainnet build installed on a machine that
+ * had ever run the testnet app (or a fresh one, for that matter) started on
+ * the testnet, called itself "SwarmTestnet · engineering testnet", and offered
+ * nothing to change it.
+ *
+ * A stored choice is now only honoured when the person made it IN A BUILD FOR
+ * THIS NETWORK — `networkProfileChosenForBuild` records which build's selector
+ * they used. That single key separates "this user deliberately chose the
+ * testnet inside the mainnet app" (honoured, forever) from "this settings file
+ * has carried swarm-testnet since an earlier install" (overridden, and the
+ * override is logged).
+ *
+ * @param {Array} networks   loadProfiles() output
+ * @param {object} settings  the stored settings
+ * @param {string} buildProfileId  which network this build is for
+ * @returns {{entry, chosen:string, reason:string|null, override:object|null, fellBack:string|null}}
+ */
+function chooseStartProfile(networks, settings, buildProfileId) {
+  const build = profileById(buildProfileId) ? buildProfileId : DEFAULT_PROFILE_ID;
+  const stored = (settings && settings.networkProfile) || null;
+  const storedFor = (settings && settings.networkProfileChosenForBuild) || null;
+
+  // A stored selection counts only if it was made inside a build for this
+  // same network. Anything else is a leftover and the build decides.
+  const userChose = profileById(stored) && storedFor === build;
+  let wanted = userChose ? stored : build;
+  let override = null;
+  if (!userChose && profileById(stored) && stored !== build) {
+    override = {
+      stored,
+      build,
+      reason:
+        `this is a ${build} build; the stored selection ${stored} was not made in a ${build} build ` +
+        '(it is the shipped default, or it came from an earlier install), so the build decides'
+    };
+  }
+
+  const entry = networks.find((n) => n.id === wanted);
+  if (entry && entry.available) {
+    return { entry, chosen: entry.id, reason: null, override, fellBack: null };
+  }
+  // The wanted network has no definition in this build. Fall back to whatever
+  // this build DOES carry, preferring the build's own network, then the
+  // default. Never guess a definition; never start a network twice.
+  const fellBack = entry ? entry.reason : `this build has no profile ${wanted}`;
+  const candidates = [build, DEFAULT_PROFILE_ID, ...PROFILES.map((p) => p.id)];
+  for (const id of candidates) {
+    if (id === wanted) continue;
+    const alt = networks.find((n) => n.id === id);
+    if (alt && alt.available) return { entry: alt, chosen: alt.id, reason: fellBack, override, fellBack };
+  }
+  return { entry: null, chosen: null, reason: fellBack, override, fellBack };
+}
+
+/**
+ * Does this payout address still belong to the network being switched to?
+ *
+ * The owner's machine held a testnet unified address (`swarm1…`) from the
+ * earlier install. On SWARM mainnet that address does not exist and cannot be
+ * paid, so carrying it across silently is worse than having none: the node
+ * would be asked to mine to an address the chain cannot credit. Answering here
+ * means main.js clears it and the app asks for a new one.
+ */
+function payoutBelongsTo(profileId, address) {
+  const p = requireProfile(profileId);
+  const raw = String(address == null ? '' : address).trim();
+  if (!raw) return { ok: true, empty: true, reason: null };
+  const shape = classifyPrefix(p, raw);
+  if (shape.kind) return { ok: true, empty: false, reason: null };
+  const other = shape.wrongNetwork === 'upstream' ? 'upstream Zcash' : (profileById(shape.wrongNetwork) || {}).label;
+  return {
+    ok: false,
+    empty: false,
+    reason: other
+      ? `that payout address belongs to ${other}, not ${p.label}`
+      : `that payout address is not a ${p.label} address`
+  };
+}
+
 /** The directory a profile keeps its chain in. Never shared between profiles. */
 function dataDirFor(profile, settings, userDataDir) {
   const p = requireProfile(profile.id || profile);
@@ -452,6 +563,9 @@ module.exports = {
   loadProfileManifest,
   validateProfileManifest,
   loadProfiles,
+  loadBuildProfile,
+  chooseStartProfile,
+  payoutBelongsTo,
   dataDirFor,
   swarmSlot
 };

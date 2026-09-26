@@ -1152,7 +1152,11 @@ class ChainEngine extends EventEmitter {
         name: this.manifest.identity.network_name,
         chain: this.manifest.identity.chain,
         ticker: this.manifest.identity.ticker,
-        isTestnet: this.manifest.identity.is_testnet !== false,
+        // THE PROFILE DECIDES, not a key the manifests do not carry. This read
+        // `identity.is_testnet !== false`, and neither network.json nor
+        // network-mainnet.json has an `is_testnet` key at all, so it was always
+        // true: a SWARM mainnet build described itself as a testnet.
+        isTestnet: this.profile.production !== true,
         status: this.manifest.status,
         // Which SWARM network this app is running, as the profile that decides
         // the configuration shape, the payout address rules and the chain check.
@@ -1164,7 +1168,15 @@ class ChainEngine extends EventEmitter {
         transparentHint: `${this.profile.transparent.p2pkh}…`,
         unifiedHint: this.profile.unifiedPrefixes.map((u) => `${u}…`).join(' or '),
         production: this.profile.production === true,
-        chainLabel: this.expectedChainLabel
+        chainLabel: this.expectedChainLabel,
+        // The two things that identify a chain beyond argument, on every
+        // screen that shows the network. "Which network am I on" was not
+        // answerable anywhere in the app: the header said SwarmTestnet on a
+        // mainnet build and nothing else said anything at all.
+        genesisHash: ((this.manifest.genesis || {}).hash) || null,
+        genesisShort: ((this.manifest.genesis || {}).hash || '').slice(0, 8) || null,
+        p2pPort: this.profile.ports.p2p,
+        rpcPort: this.profile.ports.rpc
       },
       node: {
         running: !!(this.node && this.node.running),

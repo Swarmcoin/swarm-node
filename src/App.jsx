@@ -5,7 +5,7 @@
 // main process pushes once a second and calls back through the preload bridge.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mark, Icon, Pill } from './ui.jsx';
+import { Mark, Icon, Pill, NetworkStrip } from './ui.jsx';
 import { Welcome, Consent, Payout, MachineCheck } from './setup.jsx';
 import { MiningView, NodeView, RewardsView, SettingsView, LogView } from './dashboard.jsx';
 import { MapView } from './map.jsx';
@@ -109,6 +109,10 @@ export default function App() {
       setCfg(await window.shell.getConfig());
       return r;
     },
+    // Re-read the main process's view of the settings. Anything that changes
+    // configuration outside this object calls it, so no screen renders a value
+    // the main process has already replaced.
+    refreshConfig: async () => { setCfg(await window.shell.getConfig()); },
     setReducedMotion: async (v) => {
       await window.shell.setReducedMotion(v);
       setCfg(await window.shell.getConfig());
@@ -179,16 +183,14 @@ export default function App() {
       <div className="app">
         <div className="main">
           {cfg.testRun ? <div className="testrun-strip">TEST RUN — do not use — this window belongs to an automated check</div> : null}
-          <div className="testnet-strip">
-            <Mark size={16} />
-            <span><b>{state.network.name}</b> · engineering testnet. Coins have no value.</span>
-          </div>
+          <NetworkStrip network={state.network} compact />
           <div className="content center">
             {screen === 'welcome' ? (
-              <Welcome network={cfg.network} onNext={() => setScreen('consent')} />
+              <Welcome network={cfg.network} chain={state.network} onNext={() => setScreen('consent')} />
             ) : null}
             {screen === 'consent' ? (
               <Consent
+                chain={state.network}
                 onBack={() => setScreen('welcome')}
                 onAccept={async () => { await window.shell.setConsent(true); setCfg(await window.shell.getConfig()); setScreen('payout'); }}
               />
@@ -215,6 +217,42 @@ export default function App() {
               />
             ) : null}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- signed out ----------------------------------------------------------
+  // Sign out stops the node and every miner and starts the application again.
+  // That worked; what it did not do was LOOK like anything, because with no
+  // code set the new process opened straight back on the dashboard. The main
+  // process leaves a marker and this is the outside screen it comes back to.
+  if (cfg.signedOut && !(lockStatus && lockStatus.hasCode)) {
+    return (
+      <div className="lock-screen">
+        <div className="lock-card card">
+          <div className="row">
+            <Mark size={34} />
+            <div>
+              <h2 style={{ margin: 0 }}>Signed out</h2>
+              <div className="tiny dim">
+                The node and the miner were stopped. Nothing was deleted: the chain, your payout
+                address and your settings are exactly as you left them.
+              </div>
+            </div>
+          </div>
+          <div className="row" style={{ marginTop: 16 }}>
+            <button
+              className="btn primary"
+              onClick={async () => {
+                await window.shell.clearSignedOut();
+                setCfg(await window.shell.getConfig());
+              }}
+            >Open SWARM Node</button>
+          </div>
+          <p className="tiny dim" style={{ marginTop: 14, marginBottom: 0 }}>
+            Set a code under Settings → Code lock if you want this computer to ask for one.
+          </p>
         </div>
       </div>
     );
@@ -290,9 +328,7 @@ export default function App() {
 
       <div className="main">
         {cfg.testRun ? <div className="testrun-strip">TEST RUN — do not use — this window belongs to an automated check</div> : null}
-        <div className="testnet-strip">
-          <span><b>{state.network.name}</b> · engineering testnet. Coins have no value and the chain may restart.</span>
-        </div>
+        <NetworkStrip network={state.network} />
         <header className="topbar">
           <h1>{TABS.find(([id]) => id === tab)?.[1] || 'SWARM Node'}</h1>
           <div className="topbar-right">
@@ -303,6 +339,12 @@ export default function App() {
                   : <Pill kind="warn">no peers</Pill>)
               : <Pill kind="idle">node stopped</Pill>}
             {n.height != null ? <span className="mono dim">#{n.height.toLocaleString('en-US')}</span> : null}
+            {/* Which chain this window is showing. The owner could not tell a
+                mainnet build from a testnet one anywhere in the app; the
+                header now carries the chain label at all times. */}
+            <span className="mono dim" title={`genesis ${state.network.genesisHash || 'unknown'}`}>
+              {state.network.chainLabel}
+            </span>
           </div>
         </header>
 

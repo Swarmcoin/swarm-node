@@ -133,6 +133,20 @@ jobs:
       - name: Record the binary hashes this build may run
         run: node scripts/make-binaries-manifest.mjs
 
+      # WHICH NETWORK THIS BUILD IS FOR, recorded INSIDE the build.
+      #
+      # release-manifest.json says it, and that file sits beside the installer
+      # and never travels inside it. So SWARM-Node-0.2.0-mainnet.1 - built with
+      # network_profile=swarm-mainnet, carrying the mainnet definition and the
+      # SwarmMain zebrad - had no way to know, read the shipped default out of
+      # settings.json and started on the TESTNET, with no control anywhere to
+      # change it. This is the same input that writes the release manifest, so
+      # the two cannot disagree.
+      - name: Record which network this build is for
+        env:
+          SWARM_NETWORK_PROFILE: ${{ inputs.network_profile || 'swarm-testnet' }}
+        run: node scripts/set-build-profile.mjs
+
       - name: Build the renderer
         run: npm run build:ui
 

@@ -100,16 +100,31 @@ function loadNetworks() {
   return found;
 }
 
-/** Which profile this launch runs, and why, when it is not the one asked for. */
-function chooseProfile(networks, wanted) {
-  const asked = NP.profileById(wanted) ? wanted : NP.DEFAULT_PROFILE_ID;
-  const entry = networks.find((n) => n.id === asked);
-  if (entry && entry.available) return { entry, fellBack: null };
-  const fallback = networks.find((n) => n.id === NP.DEFAULT_PROFILE_ID);
-  return { entry: fallback, fellBack: entry ? entry.reason : `no profile ${asked}` };
+/**
+ * Which profile this launch runs, and why.
+ *
+ * The whole rule lives in NP.chooseStartProfile, next to the profiles it
+ * decides between and under test. What is here is the logging: an override is
+ * never silent, because "why is my mainnet app on the testnet" must be
+ * answerable from the log the app already writes.
+ */
+function chooseProfile(networks, settings, buildProfileId) {
+  const r = NP.chooseStartProfile(networks, settings, buildProfileId);
+  if (r.override) {
+    console.log(
+      `[network] OVERRIDE: stored networkProfile=${r.override.stored} ignored - ${r.override.reason}; ` +
+      `starting ${r.chosen}`
+    );
+  }
+  if (r.fellBack) {
+    console.log(`[network] ${r.fellBack}; running ${r.chosen || 'nothing'}`);
+  }
+  return r;
 }
 
 let networks = null;
+let buildProfile = null;
+let startChoice = null;
 let profile = null;
 let manifest = null;
 let settings = null;
@@ -318,14 +333,33 @@ function registerIpc() {
     // Which SWARM network is running, and every network this build knows —
     // including the ones it cannot run yet, each with the reason in words.
     networkProfile: profile.id,
+    networkProfileLabel: profile.label,
+    // Which network this BUILD is for, and whether a stored selection from
+    // another build was overridden to get here. Both are shown, because the
+    // one question the app could not answer was "which network am I on, and
+    // why that one".
+    buildNetworkProfile: buildProfile.id,
+    networkOverride: (startChoice && startChoice.override) || null,
+    networkFellBack: (startChoice && startChoice.fellBack) || null,
+    chainLabel: profile.chainLabel,
+    genesisHash: (manifest.genesis || {}).hash || null,
+    payoutClearedReason: settings.data.payoutClearedReason || null,
     networkProfiles: networks.map((n) => {
       const p = NP.profileById(n.id);
       return {
         id: n.id,
         label: n.label,
+        // What the selector shows. The profile's own label stays lower-case
+        // where it reads as a sentence; this is a menu entry.
+        menuLabel: `SWARM ${p.production ? 'Mainnet' : 'Testnet'}`,
         production: p.production === true,
         selectable: n.available === true,
         reason: n.reason,
+        current: n.id === profile.id,
+        builtFor: n.id === buildProfile.id,
+        chainLabel: p.chainLabel,
+        genesisHash: ((n.manifest || {}).genesis || {}).hash || null,
+        addressHint: NP.addressHint(p),
         p2pPort: p.ports.p2p,
         rpcPort: p.ports.rpc
       };
@@ -340,7 +374,10 @@ function registerIpc() {
     // config-store.js and firstScreen() in the renderer.
     setupCompleted: !!settings.data.setupCompletedVersion,
     tourSeen: settings.data.tourSeenVersion === app.getVersion(),
-    testRun: isTestRun
+    testRun: isTestRun,
+    // Did the last thing this person did amount to signing out? If so the
+    // app opens on the outside screen instead of the dashboard.
+    signedOut: settings.data.signedOut === true
   }));
   handle('shell:setConsent', (v) => {
     const on = V.bool(v, 'consent');
@@ -363,14 +400,50 @@ function registerIpc() {
     if (!entry || !entry.available) {
       return { ok: false, error: (entry && entry.reason) || `SWARM Node has no definition for ${wanted}.` };
     }
-    settings.save({ networkProfile: wanted });
+    const target = NP.profileById(wanted);
+    // RECORDED AS A CHOICE, not merely as a value. networkProfileChosenForBuild
+    // is what lets this survive the next start: without it the build's own
+    // network wins again on every launch and the selector appears to do
+    // nothing. See NP.chooseStartProfile.
+    const next = {
+      networkProfile: wanted,
+      networkProfileChosenForBuild: buildProfile.id,
+      networkProfileChosenAt: new Date().toISOString()
+    };
+    // A payout address belongs to a network. Carrying a swarm1... testnet
+    // address onto SWARM mainnet would point the miner at an address that
+    // chain has never heard of, so it is dropped and said out loud.
+    const payout = NP.payoutBelongsTo(wanted, settings.data.payoutAddress);
+    let clearedPayout = null;
+    if (!payout.ok) {
+      clearedPayout = `${payout.reason}. Paste a ${target.label} address (${NP.addressHint(target)}) before mining.`;
+      Object.assign(next, { payoutAddress: '', payoutKind: null, payoutDetail: '', payoutClearedReason: clearedPayout });
+    }
+    settings.save(next);
     return {
       ok: true,
       networkProfile: wanted,
+      label: target.label,
+      chainLabel: target.chainLabel,
+      clearedPayout,
+      // The engine, the chain folder and every port are built around one
+      // profile at start-up, so switching means starting the app again. The
+      // renderer offers exactly that and shell:restartApp does it.
       restartRequired: wanted !== profile.id,
-      note: wanted === profile.id ? null : 'Close and reopen SWARM Node to run it.'
+      note: wanted === profile.id ? null : `SWARM Node restarts and the node starts on ${target.label}.`
     };
   });
+  // Stop the node and every miner, then start the application again. The one
+  // way a network switch can take effect, and the same shutdown that closing
+  // the window performs: nothing is left running and nothing is deleted.
+  handle('shell:restartApp', async () => {
+    await relaunchApp();
+    return { ok: true };
+  });
+  // The payout notice is shown until it is dismissed, so a refresh cannot make
+  // an address the app itself removed disappear quietly.
+  handle('shell:dismissPayoutNotice', () => settings.save({ payoutClearedReason: null }));
+  handle('shell:clearSignedOut', () => settings.save({ signedOut: false }));
   handle('shell:completeSetup', () =>
     settings.save({ setupCompletedVersion: app.getVersion(), setupCompletedAt: new Date().toISOString() }));
   handle('shell:restartSetup', () =>
@@ -505,12 +578,16 @@ function registerIpc() {
     // Signing out means the node and every miner are stopped the same way
     // closing does — nothing is left running, and nothing is deleted: the
     // chain, the payout address and the settings stay where they are.
-    if (!quitting) {
-      quitting = true;
-      await shutdown();
-    }
-    app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) });
-    app.exit(0);
+    //
+    // THE MARKER IS THE POINT. This already stopped everything and already
+    // started the app again, and the owner still reported that Sign out "does
+    // nothing": with no code set the new process opened straight back on the
+    // dashboard, so a complete sign-out was indistinguishable from a flicker.
+    // The flag makes the app come back on the OUTSIDE screen — the lock screen
+    // when a code is set, the signed-out screen when none is — which is what
+    // the button has always promised.
+    settings.save({ signedOut: true });
+    await relaunchApp();
     return { ok: true };
   });
 }
@@ -559,18 +636,43 @@ async function runBenchmark() {
 // ---------------------------------------------------------------- lifecycle
 app.whenReady().then(() => {
   networks = loadNetworks();
+  // Which network this BUILD is for. The stored settings no longer get the
+  // last word: see NP.chooseStartProfile and electron/net/build-profile.json.
+  buildProfile = NP.loadBuildProfile(NET_DIR);
+  if (buildProfile.error) console.error(`[network] ${buildProfile.error}`);
+  console.log(`[network] this is a ${buildProfile.id} build`);
   const bootstrap = networks.find((n) => n.id === NP.DEFAULT_PROFILE_ID);
-  settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), bootstrap.manifest || {});
+  settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), (bootstrap && bootstrap.manifest) || {});
 
-  const chosen = chooseProfile(networks, settings.data.networkProfile);
-  if (chosen.fellBack) {
-    console.log(`[network] ${settings.data.networkProfile} is not available (${chosen.fellBack}); running ${chosen.entry.id}`);
-    settings.save({ networkProfile: chosen.entry.id });
+  const chosen = chooseProfile(networks, settings.data, buildProfile.id);
+  if (!chosen.entry) {
+    // Nothing this build carries can be started. Say so and stop, rather than
+    // opening a window that cannot do anything.
+    dialog.showErrorBox('SWARM Node cannot start', String(chosen.reason || 'this build carries no usable network definition'));
+    app.exit(1);
+    return;
   }
+  startChoice = chosen;
+  if (chosen.chosen !== settings.data.networkProfile) settings.save({ networkProfile: chosen.chosen });
   profile = NP.profileById(chosen.entry.id);
   manifest = chosen.entry.manifest;
   manifest._source = chosen.entry.overridden ? `override: ${chosen.entry.file}` : 'embedded';
   manifest._profile = profile.id;
+
+  // A payout address from the other network cannot be paid on this one. The
+  // owner's machine carried a testnet `swarm1…` address into a mainnet build;
+  // keeping it would have pointed the miner at an address SWARM mainnet has
+  // never heard of. Dropped here, with the reason kept so the UI can say it.
+  const payout = NP.payoutBelongsTo(profile.id, settings.data.payoutAddress);
+  if (!payout.ok) {
+    console.log(`[network] payout address cleared: ${payout.reason}`);
+    settings.save({
+      payoutAddress: '',
+      payoutKind: null,
+      payoutDetail: '',
+      payoutClearedReason: `${payout.reason}. Paste a ${profile.label} address (${NP.addressHint(profile)}) before mining.`
+    });
+  }
 
   // Each network keeps its own chain folder. A mainnet node opened on testnet
   // state is a wrong-chain node, and the state database cannot be shared.
@@ -624,6 +726,23 @@ app.whenReady().then(() => {
  * Nothing runs hidden. Closing the window stops the node and every miner
  * BEFORE the process exits, and the quit waits for the graceful stop.
  */
+/**
+ * Stop everything this app started, then start the application again.
+ *
+ * Used by signing out and by a network switch, because the engine, the chain
+ * folder and every port are built around one profile at start-up. app.exit()
+ * rather than app.quit(), so the before-quit handler does not run the same
+ * shutdown a second time.
+ */
+async function relaunchApp() {
+  if (!quitting) {
+    quitting = true;
+    await shutdown();
+  }
+  app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) });
+  app.exit(0);
+}
+
 async function shutdown() {
   if (!engine) return;
   try {

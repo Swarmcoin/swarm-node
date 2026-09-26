@@ -188,6 +188,92 @@ points are still pinned to the upstream domain registry). Until that lands and
 a binary exists, `swarm-mainnet` is an unselectable profile whose renderer and
 checks are unit-tested only.
 
+## Which network a build STARTS on
+
+Added 2026-09-26, after `SWARM-Node-0.2.0-mainnet.1` — a build made with
+`network_profile=swarm-mainnet`, carrying `network-mainnet.json` and the
+SwarmMain `zebrad` — installed on the owner's machine and came up saying
+**"SwarmTestnet · engineering testnet"**, with no control anywhere in the app
+to change it. Two independent causes:
+
+**1. The packaged app did not know which network it was built for.** The
+profile was recorded in `release-manifest.json`, which sits *beside* the
+installer and never travels inside it. At start-up the app read
+`networkProfile` out of `settings.json`, found `swarm-testnet` — the shipped
+default, and the value every earlier install had already written — and
+honoured it. There was no machine, fresh or upgraded, on which a mainnet build
+could have started on mainnet.
+
+**2. `shell:setNetworkProfile` was unreachable.** The handler existed, was
+exposed on the preload bridge and refused an unavailable profile with a
+sentence. Nothing in the renderer ever called it. Settings listed the two
+networks as read-only rows: "running now" / "available in this build".
+
+### The marker
+
+`electron/net/build-profile.json` records the build's own network, and
+`scripts/set-build-profile.mjs` writes it from `SWARM_NETWORK_PROFILE` — the
+same input that decides `release_manifest.network_profile` and which `zebrad`
+is fetched, so the three cannot disagree. Both workflows run it
+(`npm run mainnet:build` does too). The committed value is `swarm-testnet`, so
+a developer checkout behaves exactly as before. A missing or unreadable marker
+means "the default build"; a marker naming anything that is not one of the two
+profiles is refused and logged, and upstream Zcash can never appear there
+because the id is looked up in the closed list.
+
+### The rule
+
+`NP.chooseStartProfile(networks, settings, buildProfileId)`:
+
+* a stored `networkProfile` is honoured **only** when
+  `networkProfileChosenForBuild` equals this build's network — that is, when
+  the person used the Network selector inside a build for this network;
+* otherwise the build decides, and the override is logged with what was
+  ignored and why, and shown in Settings;
+* if the build's own network has no definition, it falls back to whatever the
+  build does carry and says so (this is the pre-launch state);
+* if nothing is usable it starts nothing, rather than guessing.
+
+So: a mainnet build starts on mainnet, fresh or over a testnet install; a
+person who deliberately picks the testnet inside the mainnet app keeps it
+across restarts; a testnet build is unchanged.
+
+### The payout address follows the network
+
+`NP.payoutBelongsTo` is checked at start-up and on every switch. The owner's
+machine held a testnet `swarm1…` unified address; SWARM mainnet has never
+heard of it and cannot pay it, so it is cleared and the reason is shown in
+Settings rather than left as a field nobody emptied.
+
+### What the app now shows
+
+| where | what |
+| --- | --- |
+| the band across the top | `SwarmMainnet · SWARM mainnet · chain swarm-mainnet · genesis 01c34428…` on a production profile, and the testnet warning only on the testnet |
+| the header bar | the chain label, at all times, with the full genesis on hover |
+| Mining | `network: swarm-mainnet`, `genesis: 01c34428…`, `payouts to: s1… / swm1…`, and the same chain label inside the held-back row |
+| Node → Network | the profile label, the chain label, the genesis and what the node itself reports |
+| Settings → Network | the selector, "Running now", the chain, the full genesis, the ports, the address prefixes, and which network the build was made for |
+
+The selector is a `<select>` labelled **Network** with the options **SWARM
+Mainnet** and **SWARM Testnet**. A network this build cannot run is shown
+disabled with its reason in words. Choosing one asks first — it names the
+chain, the genesis, the port and the fact that a foreign payout address will
+be removed — then saves the choice and restarts the application, because the
+engine, the chain folder and both ports are built around one profile at
+start-up. `shell:restartApp` performs the same stop-everything the window's
+close button does.
+
+`state.network.isTestnet` used to be `manifest.identity.is_testnet !== false`,
+and no manifest carries an `is_testnet` key, so it was always true: a SWARM
+mainnet build described itself as a testnet. It is `profile.production !==
+true` now, and the first-run wizard's "the coins have no value" wording — which
+was consent text — follows the profile too.
+
+`test/start-profile.test.js` and `test/network-selector.test.js` hold all of
+this still, including the two things a value test cannot catch: that the
+control exists in the Settings page, and that something calls the handler.
+
 ## Disposition of every "mainnet"-shaped hit in the app
 
 Searched for `Mainnet`, `mainnet`, `network =`, `testnet`, `t1…`, `t3…`,
@@ -202,7 +288,8 @@ Searched for `Mainnet`, `mainnet`, `network =`, `testnet`, `t1…`, `t3…`,
 | `electron/chain/address-format.js`, `address.js` | `tm/t2/s1/s3/swarm1/utest1/swm1/u1/t1/t3` prefixes | all read from the profile; the literals left are the upstream forms being *refused* |
 | `electron/chain/network-status.js` | `raw.network` | a field of the seed's status file, refused unless its chain label and genesis match this build |
 | `electron/config-store.js` | `networkProfile`, `dataDirMainnet` | the stored choice and the mainnet chain folder |
-| `electron/main.js` | `loadNetworks`, `chooseProfile`, `shell:setNetworkProfile` | selection and fallback; an unavailable profile cannot be chosen |
+| `electron/main.js` | `loadNetworks`, `chooseProfile` (now `NP.chooseStartProfile`), `shell:setNetworkProfile`, `shell:restartApp` | selection, override and fallback; an unavailable profile cannot be chosen |
+| `electron/net/build-profile.json` | `"profile": "swarm-testnet"` | which network this build is FOR; validated against the closed list on load |
 | `electron/net/network.json` | `SwarmTestnet`, `Testnet`, three `t2…` recipients | the testnet definition, unchanged |
 | `src/App.jsx`, `src/dashboard.jsx`, `src/setup.jsx` | address prefixes in the wording | now rendered from `state.network.transparentHint` / `unifiedHint`, so the text follows the profile |
 | `scripts/embed-network.mjs` | the `Testnet`-only gate | replaced by the profile check; writes the file that profile's loader reads |

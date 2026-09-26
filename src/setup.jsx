@@ -17,11 +17,21 @@ function Steps({ index }) {
   );
 }
 
-export function Welcome({ network, onNext }) {
+// WHAT THIS WIZARD MAY CLAIM depends on which network is running, and it used
+// to claim the same thing always: "engineering testnet", "the coins have no
+// value". On SWARM mainnet both sentences are false, and they were the first
+// two a new owner read. Everything network-specific now comes from the running
+// profile (state.network), which is the same source the header uses.
+const production = (chain) => !!(chain && chain.production);
+
+export function Welcome({ network, chain, onNext }) {
+  const prod = production(chain);
   return (
     <div className="setup" style={{ textAlign: 'center' }}>
       <div className="hero-mark"><Mark size={72} /></div>
-      <div className="kicker" style={{ marginBottom: 10 }}>{network?.network_name || 'SWARM'} · testnet</div>
+      <div className="kicker" style={{ marginBottom: 10 }}>
+        {chain?.name || network?.network_name || 'SWARM'} · {prod ? 'mainnet' : 'testnet'}
+      </div>
       <h1 style={{ fontSize: 40, marginBottom: 14 }}>Run a piece of the swarm</h1>
       <p className="muted" style={{ fontSize: 17, maxWidth: 540, margin: '0 auto 28px' }}>
         This app turns your computer into a full SWARM node. It keeps its own copy of the chain,
@@ -44,10 +54,19 @@ export function Welcome({ network, onNext }) {
           </p>
         </div>
         <div className="card flat">
-          <h3>Testnet coins</h3>
+          <h3>{prod ? 'Real coins' : 'Testnet coins'}</h3>
           <p className="small muted" style={{ margin: 0 }}>
-            This is an engineering testnet. The coins have no value and the chain may be
-            restarted from scratch.
+            {prod ? (
+              <>
+                This is the SWARM production chain, <span className="mono">{chain?.chainLabel}</span>.
+                What it pays is real and cannot be undone. Nothing here is a promise of earnings.
+              </>
+            ) : (
+              <>
+                This is an engineering testnet. The coins have no value and the chain may be
+                restarted from scratch.
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -71,7 +90,13 @@ const CONSENT_ITEMS = [
   },
   {
     key: 'value',
-    text: 'This is a testnet. The coins it pays have no monetary value, and nothing here is a promise of earnings.'
+    // The one line that cannot be the same on both networks. Saying "the coins
+    // have no monetary value" on the production chain is simply untrue, and it
+    // was ticked as consent.
+    text: 'This is a testnet. The coins it pays have no monetary value, and nothing here is a promise of earnings.',
+    production:
+      'This is the SWARM production chain. The coins it pays are real, transactions cannot be ' +
+      'reversed, and nothing here is a promise of earnings.'
   },
   {
     key: 'stop',
@@ -79,9 +104,11 @@ const CONSENT_ITEMS = [
   }
 ];
 
-export function Consent({ onAccept, onBack }) {
+export function Consent({ onAccept, onBack, chain }) {
   const [checks, setChecks] = useState({});
-  const all = CONSENT_ITEMS.every((i) => checks[i.key]);
+  const prod = production(chain);
+  const items = CONSENT_ITEMS.map((i) => ({ ...i, text: (prod && i.production) || i.text }));
+  const all = items.every((i) => checks[i.key]);
   return (
     <div className="setup">
       <Steps index={0} />
@@ -89,7 +116,7 @@ export function Consent({ onAccept, onBack }) {
       <h1 style={{ margin: '10px 0 8px' }}>Exactly what will run</h1>
       <p className="muted">Nothing is hidden and nothing starts before you agree. Tick each line.</p>
       <div className="consent-list">
-        {CONSENT_ITEMS.map((item) => (
+        {items.map((item) => (
           <label key={item.key} className="check">
             <input
               type="checkbox"

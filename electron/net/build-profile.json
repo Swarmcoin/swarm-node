@@ -1,0 +1,11 @@
+{
+  "_comment": "Which SWARM network THIS BUILD is for. Written by scripts/set-build-profile.mjs from SWARM_NETWORK_PROFILE, the same input that decides the release manifest's network_profile and which zebrad is fetched, so the two cannot disagree.",
+  "_why": [
+    "A build ships every network definition it carries, and until now nothing inside the",
+    "packaged app recorded which one it was BUILT for. The app read its stored settings,",
+    "found networkProfile=swarm-testnet left over from an earlier install (or the hard-coded",
+    "default on a fresh one), and a mainnet installer came up on the testnet saying",
+    "'SwarmTestnet - engineering testnet' with no way to change it. See docs/NETWORK-PROFILES.md."
+  ],
+  "profile": "swarm-testnet"
+}

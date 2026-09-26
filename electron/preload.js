@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('shell', {
   // Which SWARM network to run. Refused by the main process unless this build
   // carries that network's definition.
   setNetworkProfile: (id) => invoke('shell:setNetworkProfile', id),
+  // Stop the node and the miners and start the application again. The only
+  // way a network switch takes effect, because the engine is built around one
+  // profile at start-up.
+  restartApp: () => invoke('shell:restartApp'),
+  dismissPayoutNotice: () => invoke('shell:dismissPayoutNotice'),
+  clearSignedOut: () => invoke('shell:clearSignedOut'),
   completeSetup: () => invoke('shell:completeSetup'),
   restartSetup: () => invoke('shell:restartSetup'),
   setTourSeen: (seen) => invoke('shell:setTourSeen', seen === true),

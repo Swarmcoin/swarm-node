@@ -327,11 +327,17 @@ input[type='range'] { width: 100%; accent-color: var(--orange); }
 .bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .06); overflow: hidden; }
 .bar > i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--orange), var(--honey)); transform-origin: left; animation: growX .6s cubic-bezier(.2,.8,.2,1); }
 
-.testnet-strip {
+.testnet-strip, .net-strip {
   display: flex; align-items: center; gap: 10px;
   padding: 7px var(--sp-xl); font-size: 12px;
   background: rgba(255, 176, 32, .08); border-bottom: 1px solid rgba(255, 176, 32, .25); color: #F4DCA0;
 }
+/* The production network is not a warning. Same band, same geometry, the
+   app's own honey instead of the caution amber. */
+.net-strip.production {
+  background: rgba(255, 255, 255, .03); border-bottom: 1px solid rgba(255, 255, 255, .10); color: var(--muted, #A9B0BC);
+}
+.net-strip.production b { color: var(--honey, #FFC14D); }
 
 .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.2); border-top-color: var(--orange); border-radius: 50%; animation: spin .8s linear infinite; }
 

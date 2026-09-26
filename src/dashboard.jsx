@@ -89,6 +89,14 @@ export function MiningView({ s, api }) {
             ) : null}
           </div>
         </div>
+        {/* WHICH CHAIN this would mine. The gate row below says it too, but
+            only while mining is held back, and the owner's complaint was that
+            nothing on any screen said which network was running. */}
+        <div className="row wrap tiny" style={{ marginTop: 12, gap: 16, opacity: 0.85 }}>
+          <span>network: <b className="mono">{s.network.chainLabel}</b></span>
+          <span>genesis: <b className="mono" title={s.network.genesisHash || ''}>{s.network.genesisShort ? `${s.network.genesisShort}…` : '—'}</b></span>
+          <span>payouts to: <b className="mono">{s.network.transparentHint} / {s.network.unifiedHint}</b></span>
+        </div>
       </div>
 
       {!g.allow ? (
@@ -101,7 +109,8 @@ export function MiningView({ s, api }) {
             <div className="row wrap tiny" style={{ marginTop: 10, gap: 16, opacity: 0.85 }}>
               <span>your node: <b className="mono">{g.myHeight == null ? '—' : '#' + g.myHeight}</b></span>
               <span>
-                network: <b className="mono">{g.networkHeight == null ? '—' : '#' + g.networkHeight}</b>
+                network: <b className="mono">{s.network.chainLabel}</b>
+                {g.networkHeight == null ? '' : ` #${g.networkHeight}`}
                 {g.networkSource ? ` (${g.networkSource})` : ''}
               </span>
               <span>peers: <b className="mono">{g.peers == null ? '—' : g.peers}</b></span>
@@ -377,6 +386,23 @@ export function NodeView({ s, api, cfg }) {
           <table className="tbl" style={{ marginTop: 8 }}>
             <tbody>
               <tr><td className="muted">Chain</td><td className="num">{s.network.name}</td></tr>
+              {/* The two values that identify a chain. Without them "which
+                  network is this node on" could not be answered anywhere in
+                  the app, and a mainnet build ran the testnet in silence. */}
+              <tr><td className="muted">Network</td><td className="num">{s.network.profileLabel} ({s.network.chainLabel})</td></tr>
+              <tr>
+                <td className="muted">Genesis</td>
+                <td className="num mono" style={{ fontSize: 11, wordBreak: 'break-all' }} title={s.network.genesisHash || ''}>
+                  {s.network.genesisShort ? `${s.network.genesisShort}…` : '—'}
+                </td>
+              </tr>
+              <tr>
+                <td className="muted">Node reports</td>
+                <td className="num">
+                  {n.chainCheck && n.chainCheck.got ? n.chainCheck.got : '—'}
+                  {n.chainCheck && n.chainCheck.ok === false ? ' — wrong chain' : ''}
+                </td>
+              </tr>
               <tr><td className="muted">Network hash rate</td><td className="num">{s.network_stats.networkSolps == null ? '—' : fmtSolps(s.network_stats.networkSolps)}</td></tr>
               <tr><td className="muted">Difficulty</td><td className="num">{s.network_stats.difficulty == null ? '—' : s.network_stats.difficulty.toFixed(4)}</td></tr>
               <tr><td className="muted">Node uptime</td><td className="num">{n.running ? fmtDuration(n.uptimeSec) : '—'}</td></tr>
@@ -539,6 +565,132 @@ export function RewardsView({ s }) {
 }
 
 // ---------------------------------------------------------------- settings
+/**
+ * WHICH NETWORK THIS APP RUNS, and the control to change it.
+ *
+ * THE DEFECT THIS FIXES. `shell:setNetworkProfile` has existed since the
+ * mainnet profile was added, and nothing in the renderer ever called it. The
+ * "This build" table listed both networks as text - "running now", "available
+ * in this build" - so a SWARM mainnet installer opened on the testnet with the
+ * two words the owner needed printed as a read-only row and no control
+ * anywhere. The app has to be RESTARTED into a profile (the engine, the chain
+ * folder and both ports are built around one at start-up), which is why this
+ * asks before it acts and then restarts the app itself rather than telling
+ * somebody to close a window.
+ *
+ * A network this build cannot run is shown and disabled with the reason in
+ * words, for the same reason the old table did it: a missing network must
+ * never be a silent absence.
+ */
+function NetworkCard({ s, cfg }) {
+  const [pending, setPending] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const profiles = cfg.networkProfiles || [];
+  const current = profiles.find((p) => p.id === cfg.networkProfile) || null;
+  const target = pending ? profiles.find((p) => p.id === pending) : null;
+
+  return (
+    <div className="card">
+      <h3>Network</h3>
+      <p className="small muted">
+        Which SWARM chain this computer runs. Each network keeps its own chain folder, its own
+        ports and its own kind of payout address, so switching never touches the other one.
+      </p>
+
+      <label className="field" style={{ marginTop: 10 }}>
+        <span>Network</span>
+        <select
+          value={cfg.networkProfile}
+          disabled={busy}
+          onChange={(e) => {
+            setError('');
+            setPending(e.target.value === cfg.networkProfile ? null : e.target.value);
+          }}
+        >
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id} disabled={!p.selectable}>
+              {p.menuLabel}{p.selectable ? '' : ' — not available in this build'}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* What is running, in the values that identify a chain beyond argument. */}
+      <table className="tbl" style={{ marginTop: 12 }}>
+        <tbody>
+          <tr><td className="muted">Running now</td><td className="num">{s.network.profileLabel}</td></tr>
+          <tr><td className="muted">Chain</td><td className="num">{s.network.chainLabel}</td></tr>
+          <tr>
+            <td className="muted">Genesis</td>
+            <td className="num mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{s.network.genesisHash || '—'}</td>
+          </tr>
+          <tr><td className="muted">Ports (p2p / control)</td><td className="num">{s.network.p2pPort} / {s.network.rpcPort}</td></tr>
+          <tr><td className="muted">Payout addresses</td><td className="num">{s.network.transparentHint} or {s.network.unifiedHint}</td></tr>
+          <tr><td className="muted">This build was made for</td><td className="num">{(profiles.find((p) => p.builtFor) || {}).menuLabel || '—'}</td></tr>
+        </tbody>
+      </table>
+
+      {profiles.filter((p) => !p.selectable).map((p) => (
+        <div key={p.id} className="tiny dim" style={{ marginTop: 10, lineHeight: 1.6 }}>
+          <b>{p.menuLabel}</b> cannot be chosen in this build: {p.reason}
+        </div>
+      ))}
+
+      {/* Why THIS network and not the one that was saved. Never silent. */}
+      {cfg.networkOverride ? (
+        <div style={{ marginTop: 12 }}>
+          <Notice kind="plain">
+            This computer had <span className="mono">{cfg.networkOverride.stored}</span> saved from an
+            earlier install. This is a <span className="mono">{cfg.networkOverride.build}</span> build, so it
+            started on {current ? current.menuLabel : cfg.networkProfile}. Choose above to change it.
+          </Notice>
+        </div>
+      ) : null}
+
+      {error ? <div style={{ marginTop: 12 }}><Notice kind="bad">{error}</Notice></div> : null}
+
+      {target ? (
+        <div style={{ marginTop: 12 }}>
+          <Notice kind="warn">
+            <div style={{ width: '100%' }}>
+              <b>Switch to {target.menuLabel}?</b>
+              <div className="small" style={{ marginTop: 6, lineHeight: 1.6 }}>
+                SWARM Node stops the node and any mining, then starts again on{' '}
+                <span className="mono">{target.chainLabel}</span> (genesis{' '}
+                <span className="mono">{(target.genesisHash || '').slice(0, 8)}…</span>, port {target.p2pPort}).
+                That network keeps its own chain folder, so nothing already downloaded is lost.
+                A payout address belonging to the other network is removed, because{' '}
+                {target.menuLabel} cannot pay it — you will be asked for a{' '}
+                <span className="mono">{target.addressHint}</span> address.
+              </div>
+              <div className="row" style={{ marginTop: 12 }}>
+                <button
+                  className="btn primary sm"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError('');
+                    const r = await window.shell.setNetworkProfile(target.id);
+                    if (!r || !r.ok) {
+                      setBusy(false);
+                      setError((r && r.error) || 'That network could not be selected.');
+                      return;
+                    }
+                    if (r.restartRequired) await window.shell.restartApp();
+                    else { setBusy(false); setPending(null); }
+                  }}
+                >{busy ? 'Restarting…' : 'Switch and restart'}</button>
+                <button className="btn sm" disabled={busy} onClick={() => setPending(null)}>Cancel</button>
+              </div>
+            </div>
+          </Notice>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SettingsView({ s, cfg, api }) {
   const [phrase, setPhrase] = useState('');
   const [addr, setAddr] = useState(s.payout.address || '');
@@ -547,6 +699,26 @@ export function SettingsView({ s, cfg, api }) {
 
   return (
     <div className="stack-lg">
+      {/* First, because which chain is running decides whether the payout
+          address below is even a valid address. */}
+      <NetworkCard s={s} cfg={cfg} />
+
+      {/* The app removed an address that belonged to the other network. Said
+          here rather than left as an empty field nobody emptied. */}
+      {cfg.payoutClearedReason ? (
+        <Notice kind="warn">
+          <div style={{ width: '100%' }}>
+            <b>Your payout address was removed.</b>
+            <div style={{ marginTop: 4 }}>{cfg.payoutClearedReason}</div>
+            <button
+              className="btn sm"
+              style={{ marginTop: 10 }}
+              onClick={async () => { await window.shell.dismissPayoutNotice(); if (api.refreshConfig) await api.refreshConfig(); }}
+            >Got it</button>
+          </div>
+        </Notice>
+      ) : null}
+
       <div className="card">
         <div className="row">
           <div>
@@ -661,24 +833,19 @@ export function SettingsView({ s, cfg, api }) {
             <tr><td className="muted">Version</td><td className="num">{cfg.appVersion}</td></tr>
             <tr><td className="muted">Network</td><td className="num">{s.network.name}</td></tr>
             <tr><td className="muted">Network definition</td><td className="num">{cfg.networkSource}</td></tr>
-            {/* Every network this build knows, including the ones it cannot
-                run yet. A profile with no definition bundled is shown with the
-                reason in words, so "SWARM mainnet" is never a silent absence
-                and never a button that would join somebody else's chain. */}
-            {(cfg.networkProfiles || []).map((p) => (
-              <tr key={p.id}>
-                <td className="muted">{p.label}</td>
-                <td className="num">
-                  {p.id === cfg.networkProfile
-                    ? 'running now'
-                    : p.selectable ? 'available in this build' : 'not available yet'}
-                </td>
-              </tr>
-            ))}
+            {/* Which network this build was MADE for. The list of networks and
+                the control that switches between them now live in the Network
+                card at the top of this page; this row is the build's own
+                identity, which is a different question and the one the release
+                manifest answers. */}
+            <tr>
+              <td className="muted">Built for</td>
+              <td className="num">{cfg.buildNetworkProfile}</td>
+            </tr>
             <tr><td className="muted">Node program</td><td className="num">{s.binaries.zebrad.ok ? 'verified' : 'not usable'}</td></tr>
             <tr><td className="muted">Node SHA-256</td><td className="num" style={{ fontSize: 11, wordBreak: 'break-all' }}>{s.binaries.zebrad.sha256 || '—'}</td></tr>
             <tr><td className="muted">Miner program</td><td className="num">{s.binaries.miner.simulated ? 'simulated' : s.binaries.miner.ok ? 'verified' : 'not bundled'}</td></tr>
-            <tr><td className="muted">Automatic updates</td><td className="num">off — this testnet build has no update feed</td></tr>
+            <tr><td className="muted">Automatic updates</td><td className="num">off — this build has no update feed</td></tr>
           </tbody>
         </table>
         {/* Each program says exactly where it came from. The two are NOT from

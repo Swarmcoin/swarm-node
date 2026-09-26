@@ -66,6 +66,39 @@ export function Metric({ label, value, detail, edge, small }) {
   );
 }
 
+/**
+ * The band across the top of every screen that says WHICH NETWORK this is.
+ *
+ * It used to be a hard-coded testnet warning: `<network name> · engineering
+ * testnet. Coins have no value…`, rendered whatever network was running. A
+ * SWARM mainnet build therefore told the owner its real coins were worthless
+ * test coins, and the app said nothing anywhere else about which chain it was
+ * on. Now the profile decides: the warning belongs to the testnet, and the
+ * production network gets its chain label and its genesis instead, which are
+ * the two things that identify a chain beyond argument.
+ */
+export function NetworkStrip({ network, compact }) {
+  if (!network) return null;
+  const production = network.production === true;
+  return (
+    <div className={`net-strip${production ? ' production' : ''}`}>
+      <Mark size={16} />
+      {production ? (
+        <span>
+          <b>{network.name}</b> · {network.profileLabel} · chain{' '}
+          <span className="mono">{network.chainLabel}</span>
+          {network.genesisShort ? <> · genesis <span className="mono">{network.genesisShort}…</span></> : null}
+        </span>
+      ) : (
+        <span>
+          <b>{network.name}</b> · engineering testnet. Coins have no value
+          {compact ? '.' : ' and the chain may restart.'}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function Notice({ kind = 'plain', children }) {
   return <div className={`notice ${kind}`}>{children}</div>;
 }

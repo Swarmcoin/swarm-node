@@ -56,10 +56,20 @@ That is the whole thing. `mainnet:build` is
 
 ```
 npm run mainnet:embed   # node scripts/embed-network.mjs D:/privacy/network/swarm-mainnet
+ && node scripts/set-build-profile.mjs swarm-mainnet   # what network this build IS
  && npm run check        # lint, string sweep, the whole unit suite
  && npm run build:ui
  && electron-builder --publish never
 ```
+
+`set-build-profile.mjs` writes `electron/net/build-profile.json`, the only
+thing inside the packaged app that says which network it was made for. Without
+it a mainnet build reads the shipped `swarm-testnet` default out of the user's
+settings and starts on the testnet — which is exactly what 0.2.0-mainnet.1 did
+on the owner's machine. Both CI workflows run the same script from the same
+`SWARM_NETWORK_PROFILE` input that writes the release manifest, so the two
+cannot disagree. See "Which network a build STARTS on" in
+docs/NETWORK-PROFILES.md.
 
 so the definition is embedded, the build is refused if anything about it is
 wrong, and the installer for the host platform is produced — in one command,
