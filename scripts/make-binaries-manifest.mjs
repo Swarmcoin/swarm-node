@@ -69,6 +69,56 @@ const PROVENANCE = {
   }
 };
 
+// The provenance every mainnet node binary shares. Spread into each entry so
+// that the testnet zebrad's `upstream_base`, `changes_vs_upstream` and
+// `build` in PROVENANCE above - which describe a tree WITHOUT
+// Network::SwarmMain - cannot survive into a mainnet build's binaries.json.
+const MAINNET_NODE = {
+  repository: 'Swarm-Official/privacy-zebra',
+  branch: 'codex/mainnet-integration-20260925',
+  commit: '01b9da3de144a6deb4dd631396cbbc3bfb7c6d81',
+  release: 'vendored-binaries-mainnet-2',
+  workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/36217735742',
+  built_at_utc: '2026-09-26T04:35:53Z',
+  upstream_base: 'tag v6.3.0, the official Zcash Foundation release',
+  changes_vs_upstream:
+    'adds Network::SwarmMain, the SWARM production network, magic SWMN, ' +
+    'transaction domain 0x53574d31, V5/V6 only from height 1, the 8/4/8 funding ' +
+    'split to three s3 P2SH destinations, and the [network.swarm_main] config ' +
+    'section with initial_swarm_main_peers. Equihash 200,9 and the rest of ' +
+    'consensus and cryptography are inherited from v6.3.0 unchanged.',
+  build: 'cargo build --locked --release --package zebrad --bin zebrad --features internal-miner',
+  network: 'SwarmMainnet',
+  binary: 'zebrad'
+};
+
+// The mainnet MINER comes out of the same archive and the same tree as the
+// mainnet node, which the testnet miner does not: PROVENANCE.miner above
+// names swarm-tools @ 7f82a03be, a tree 333 commits past v6.3.0 with no
+// SwarmMain in it. Without an entry here, a mainnet build's binaries.json
+// would attribute a 01b9da3de miner to that other branch. Hashes recomputed
+// from the same archives on 2026-09-26; the miner is not gated the way the
+// node is, so this is provenance, not a gate.
+const MAINNET_MINER = {
+  role: 'the standard (multi-core) mining engine',
+  repository: 'Swarm-Official/privacy-zebra',
+  branch: 'codex/mainnet-integration-20260925',
+  commit: '01b9da3de144a6deb4dd631396cbbc3bfb7c6d81',
+  release: 'vendored-binaries-mainnet-2',
+  workflow_run: 'https://github.com/Swarm-Official/privacy-zebra/actions/runs/36217735742',
+  built_at_utc: '2026-09-26T04:35:53Z',
+  upstream_base: 'the same tree as the node beside it, which carries privacy-miner.rs',
+  changes_vs_upstream:
+    'privacy-miner is an RPC client: it asks the node for a template, solves ' +
+    'Equihash 200,9 and submits. It decides nothing about the network - the ' +
+    'node validates every block it is offered.',
+  build:
+    'cargo build --locked --release --package zebrad --bin privacy-miner --bin swarm-keytool ' +
+    '--features internal-miner',
+  network: 'SwarmMainnet',
+  binary: 'privacy-miner'
+};
+
 // Platform builds are identified by the bytes CI verified.
 const VERIFIED_BUILDS = {
   "e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68": {
@@ -101,7 +151,43 @@ const VERIFIED_BUILDS = {
     "built_at_utc": "2026-09-24T01:36:55Z",
     "target": "x86_64-apple-darwin",
     "binary": "zebrad"
-  }
+  },
+
+  // ---- the SWARM MAINNET node, vendored-binaries-mainnet-2 ----
+  //
+  // A different tree from the five above. Those are the testnet node, built
+  // from codex/swarm-prefix-node c4e0a4b3, which has no Network::SwarmMain at
+  // all: it rejects [network.swarm_main] while deserialising its config and
+  // can never report chain swarm-mainnet. A mainnet build must run these.
+  //
+  // Source privacy-zebra 01b9da3de (built at f5b27500, which differs from it
+  // only by .github/workflows/swarm-binaries.yml), run 36217735742. The two
+  // commits since mainnet-1 that matter: 16c6a210f added
+  // `initial_swarm_main_peers`, without which a SwarmMain node cannot be
+  // pointed at seed-main.swarm.green at all, and 01b9da3de fixed the fee
+  // swarm-treasury charges (a tool, not bundled here).
+  //
+  // REVIEWED, not copied across. Each hash below was recomputed on 2026-09-26
+  // from the release archive in D:/privacy/outputs/mainnet-ci-20260926/
+  // privacy-zebra/01b9da3de/, and agrees with that run's own SHA256SUMS and
+  // with build/binary-pins.json - which fetch-pinned-binaries.mjs enforces
+  // before this script ever sees the file. The Windows binary was also given
+  // the exact zebrad.toml this app renders for swarm-mainnet and reported
+  // "Zcash network: SwarmMainnet".
+  //
+  // These are NOT byte-reproducible against the build host's own compile of
+  // the same source: Zebra's release build compiles in absolute source and
+  // cargo-registry paths. No reproducibility claim is made, here or anywhere.
+  "2bf0f0255ef4dd2cd26e27271034daf012fb004c893f3e9ade01c7d3404f9432": { ...MAINNET_NODE, "target": "x86_64-pc-windows-msvc" },
+  "2d3511de0ca581fa33f180502d4d652cbb9ea19bfcb3d750d4718aaaca4ac418": { ...MAINNET_NODE, "target": "x86_64-unknown-linux-gnu" },
+  "6c2e781ee0386a9cde9a772cd5cb3041c0182cf21e36fefe86c205dbe2340845": { ...MAINNET_NODE, "target": "aarch64-apple-darwin" },
+  "5812b34177d2688a552375567db9f1a4a7fe567f709cf4b97d54ea0b1284a8c3": { ...MAINNET_NODE, "target": "x86_64-apple-darwin" },
+
+  // the mainnet miner out of the same four archives
+  "c432d9a003facfd33b40c5d0909cd6211b9a711b6e42202f091bfe90468b8ea8": { ...MAINNET_MINER, "target": "x86_64-pc-windows-msvc" },
+  "550b63085ca2efa476a8490f1d64dca44fcf1c0e94947a7e1982a34535d3d9b0": { ...MAINNET_MINER, "target": "x86_64-unknown-linux-gnu" },
+  "86549181bb7bf8574bdb016ba7c39c1a1bd5aa0a979746a21a050c6e40a86fd9": { ...MAINNET_MINER, "target": "aarch64-apple-darwin" },
+  "cfad03ddb59456ca9513062b93942ecfff1a9c3f17d7f33db1cc143587083882": { ...MAINNET_MINER, "target": "x86_64-apple-darwin" }
 };
 
 // The shipped names. The upstream names are accepted as a fallback so a
