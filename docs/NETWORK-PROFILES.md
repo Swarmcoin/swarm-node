@@ -238,6 +238,18 @@ So: a mainnet build starts on mainnet, fresh or over a testnet install; a
 person who deliberately picks the testnet inside the mainnet app keeps it
 across restarts; a testnet build is unchanged.
 
+### A definition is not enough to RUN a network
+
+Both definitions ship in every build, but a build ships **one pair of
+binaries**, and they are not interchangeable: the testnet `zebrad` has no
+`Network::SwarmMain` in it, rejects `[network.swarm_main]` while deserialising
+its configuration, and can never report chain `swarm-mainnet`. So a production
+profile is selectable only when the node binary this build actually packaged
+records that network in its provenance (`electron/net/binaries.json`, written
+from the verified bytes). In a testnet build **SWARM Mainnet is greyed with
+that reason**, rather than being a button that stops the node. The check runs
+in packaged builds only, because a developer checkout may carry either pair.
+
 ### The payout address follows the network
 
 `NP.payoutBelongsTo` is checked at start-up and on every switch. The owner's

@@ -449,6 +449,38 @@ function loadProfiles(netDir) {
   return PROFILES.map((p) => loadProfileManifest(p, netDir));
 }
 
+/**
+ * Can the node program this build bundles actually run this network?
+ *
+ * A build ships ONE pair of binaries, and they are not interchangeable. The
+ * testnet `zebrad` (privacy-zebra codex/swarm-prefix-node) has no
+ * `Network::SwarmMain` in it at all: it rejects a `[network.swarm_main]`
+ * section while deserialising its configuration and can never report chain
+ * `swarm-mainnet`. Offering "SWARM Mainnet" in a testnet build would be a
+ * button that stops the node.
+ *
+ * The answer comes from the provenance the build recorded for the binary it
+ * actually packaged (electron/net/binaries.json, written by
+ * scripts/make-binaries-manifest.mjs from the verified bytes), never from the
+ * file name and never from the version string.
+ *
+ * @param {object} profile
+ * @param {object} nodeEntry  baseline.zebrad from binaries.json, or null
+ * @returns {{ok:boolean, reason:string|null}}
+ */
+function nodeBinarySupports(profile, nodeEntry) {
+  const p = requireProfile(profile.id || profile);
+  if (!p.production) return { ok: true, reason: null };
+  if (nodeEntry && String(nodeEntry.network || '') === p.networkName) return { ok: true, reason: null };
+  return {
+    ok: false,
+    reason:
+      `This build bundles the SWARM testnet node program, which has no ${p.networkName} network in it: ` +
+      'it refuses the configuration this profile writes and can never report chain ' +
+      `${p.chainLabel}. Install the ${p.label} build of SWARM Node to run it.`
+  };
+}
+
 // ------------------------------------------------------- which one to start
 
 /**
@@ -588,6 +620,7 @@ module.exports = {
   loadProfileManifest,
   validateProfileManifest,
   loadProfiles,
+  nodeBinarySupports,
   loadBuildProfile,
   chooseStartProfile,
   payoutBelongsTo,

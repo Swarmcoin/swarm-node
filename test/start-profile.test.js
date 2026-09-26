@@ -200,3 +200,35 @@ test('the engine states the chain label and the genesis on every screen refresh'
   assert.strictEqual(n.genesisShort, mainnet.genesis.hash.slice(0, 8));
   assert.strictEqual(n.p2pPort, 28233);
 });
+
+// ------------------------------- a definition is not enough to RUN a network
+
+test('a testnet build may not select mainnet, because its node cannot run it', () => {
+  // Both definitions ship in every build, so the definition alone cannot
+  // decide. The testnet zebrad has no Network::SwarmMain: it rejects
+  // [network.swarm_main] while deserialising its configuration. Offering the
+  // network anyway would be a button that stops the node.
+  const testnetNode = { branch: 'codex/swarm-prefix-node', commit: 'c4e0a4b3772ab81c2c73a183d837ac3ce2ea7c05' };
+  const bad = NP.nodeBinarySupports('swarm-mainnet', testnetNode);
+  assert.strictEqual(bad.ok, false);
+  assert.match(bad.reason, /has no SwarmMainnet network in it/);
+  assert.match(bad.reason, /Install the SWARM mainnet build/);
+
+  // The mainnet pair records the network it was built for; that is the proof.
+  assert.strictEqual(NP.nodeBinarySupports('swarm-mainnet', { network: 'SwarmMainnet' }).ok, true);
+  // And nothing constrains the testnet, which every build's node can run.
+  for (const entry of [null, undefined, {}, testnetNode, { network: 'SwarmMainnet' }]) {
+    assert.strictEqual(NP.nodeBinarySupports('swarm-testnet', entry).ok, true);
+  }
+});
+
+test('the node the mainnet pins name is recorded as a SwarmMainnet node', () => {
+  // build/binary-pins.json and scripts/make-binaries-manifest.mjs have to
+  // agree, or a correctly built mainnet app would grey out its own network.
+  const mk = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'make-binaries-manifest.mjs'), 'utf8');
+  const pins = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'build', 'binary-pins.json'), 'utf8'));
+  for (const plat of Object.values(pins.profiles['swarm-mainnet'].platforms)) {
+    assert.ok(mk.includes(plat.node_sha), `the mainnet node ${plat.node_sha} must be a reviewed build`);
+  }
+  assert.match(mk, /network: 'SwarmMainnet'/);
+});

@@ -97,6 +97,25 @@ function loadNetworks() {
       console.error(`[network] override ${override} refused: ${e.message}`);
     }
   }
+  // A DEFINITION IS NOT ENOUGH: the node program has to be able to run the
+  // network. A build ships one pair of binaries, and the testnet zebrad has
+  // no Network::SwarmMain in it — it rejects [network.swarm_main] outright.
+  // Both definitions ship in every build, so without this a testnet build
+  // would offer "SWARM Mainnet" as a button that stops the node. Enforced only
+  // in a packaged build; a developer checkout may carry either pair.
+  if (app.isPackaged) {
+    let nodeEntry = null;
+    try { nodeEntry = (require('./chain/binaries').loadBaseline() || {}).zebrad || null; } catch { /* none */ }
+    for (const entry of found) {
+      if (!entry.available) continue;
+      const can = NP.nodeBinarySupports(entry.id, nodeEntry);
+      if (!can.ok) {
+        entry.available = false;
+        entry.reason = can.reason;
+        console.log(`[network] ${entry.id} is not runnable in this build: ${can.reason}`);
+      }
+    }
+  }
   return found;
 }
 
