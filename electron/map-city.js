@@ -49,9 +49,17 @@ const key = (place) => `${String(place.city).toLowerCase()}|${String(place.count
 /**
  * What the map draws: the published places, plus the operator's own city.
  *
- * The operator's city is merged in only when the published list does not
- * already contain it — once the project has added Dallas to the file, somebody
- * in Dallas should see the published marker, not two markers in the same spot.
+ * Never two markers in one spot: once the file already names the operator's
+ * city, THAT entry is marked as theirs rather than a second dot being drawn
+ * beside it. Marked, not dropped — the entry stays `published: true` and keeps
+ * its count, because it is still the file's place and still the file's count;
+ * `mine` only says "and this is where you are".
+ *
+ * This matters more since the map became a live census of the seed's peers. A
+ * connected node now puts its OWN city in the file, so the marker the operator
+ * set on the Swarm map page vanished at exactly the moment it became true —
+ * the one case where the answer is "yes, that dot is you".
+ *
  * Each entry says where it came from, so the page can label the difference
  * instead of implying the operator's city is public when it is not.
  */
@@ -60,8 +68,11 @@ function mergePlaces(published, mine) {
   const out = publishedList.map((n) => ({ ...n, mine: false, published: true }));
   if (!mine || !mine.city) return out;
 
-  const alreadyThere = publishedList.some((n) => key(n) === key(mine));
-  if (alreadyThere) return out;
+  const alreadyThere = out.find((n) => key(n) === key(mine));
+  if (alreadyThere) {
+    alreadyThere.mine = true;
+    return out;
+  }
 
   out.push({ ...mine, count: 1, mine: true, published: false });
   return out;

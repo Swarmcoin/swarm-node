@@ -302,7 +302,14 @@ export function MapView({ cfg, s, reducedMotion }) {
   // own city is theirs and nobody else's, and a badge that added them together
   // would claim a network larger than the file does — the exact thing this map
   // refuses to do.
-  const published = nodes.filter((n) => !n.mine);
+  //
+  // `published !== false`, not `!mine`: a place can be BOTH now. When the live
+  // census already names the operator's city — which it does the moment their
+  // node connects to the seed — that one entry is the file's place and their
+  // marker at once. Counting it by `!mine` dropped it from the swarm's total
+  // and from the city count, so connecting a node made the map show one city
+  // fewer.
+  const published = nodes.filter((n) => n.published !== false);
   const minePlace = nodes.find((n) => n.mine) || null;
   const total = published.reduce((acc, n) => acc + n.count, 0);
   const when = stamp(state && state.data ? state.data.updated : null);
@@ -363,7 +370,11 @@ export function MapView({ cfg, s, reducedMotion }) {
             <div className="kicker">Cities</div>
             <div className="v">{state && state.data ? nf.format(published.length) : '—'}</div>
             <div className="tiny dim">
-              {minePlace ? `+ your city (${minePlace.city}), on this machine only` : 'city level, never finer'}
+              {minePlace
+                ? (minePlace.published === false
+                  ? `+ your city (${minePlace.city}), on this machine only`
+                  : `including your city (${minePlace.city})`)
+                : 'city level, never finer'}
             </div>
           </div>
           <div>
@@ -376,7 +387,7 @@ export function MapView({ cfg, s, reducedMotion }) {
             <div className="v plain">{nodeRunning ? 'Connected' : 'Not running'}</div>
             <div className="tiny dim">
               {nodeRunning
-                ? `${localPeers == null ? 'no' : localPeers} peer${localPeers === 1 ? '' : 's'}${minePlace ? ' · marked with your city on this machine only' : ''}`
+                ? `${localPeers == null ? 'no' : localPeers} peer${localPeers === 1 ? '' : 's'}${minePlace ? (minePlace.published === false ? ' · marked with your city on this machine only' : ' · your city is on the map') : ''}`
                 : 'start it on the Node page'}
             </div>
           </div>

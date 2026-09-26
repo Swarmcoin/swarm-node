@@ -54,12 +54,34 @@ test("the operator's own city is added, marked as theirs and not published", () 
   assert.strictEqual(mineEntry.count, 1);
 });
 
-test('once the project has published the same city, it is not drawn twice', () => {
+// Not drawn twice, and not silently un-marked either. The live census names
+// the operator's own city as soon as their node connects to the seed, which is
+// precisely when "that dot is you" became true - and the old rule chose that
+// moment to drop their marker.
+test('once the file names the same city, it is marked as theirs, not drawn twice', () => {
   const mine = C.validateCity({ city: 'dallas', country: 'us', lon: 1, lat: 2 }).city;
   const merged = C.mergePlaces([{ city: 'Dallas', country: 'US', lon: -96.8, lat: 32.78, count: 3 }], mine);
   assert.strictEqual(merged.length, 1);
-  assert.strictEqual(merged[0].mine, false);
+  assert.strictEqual(merged[0].mine, true, 'the place the operator is in is marked as theirs');
+  // Still the file's place, with the file's count and the file's coordinates:
+  // `mine` says where the operator is, it does not take the entry over.
   assert.strictEqual(merged[0].published, true);
+  assert.strictEqual(merged[0].count, 3);
+  assert.strictEqual(merged[0].lon, -96.8);
+  assert.strictEqual(merged[0].city, 'Dallas');
+});
+
+test('marking the operator’s city never changes the swarm’s own totals', () => {
+  const file = [
+    { city: 'Dallas', country: 'US', lon: -96.8, lat: 32.78, count: 1 },
+    { city: 'Santo Domingo', country: 'DO', lon: -69.94, lat: 18.46, count: 1 }
+  ];
+  const mine = C.validateCity({ city: 'Santo Domingo', country: 'DO', lon: -69.94, lat: 18.46 }).city;
+  const merged = C.mergePlaces(file, mine);
+  const fromFile = merged.filter((n) => n.published !== false);
+  assert.strictEqual(fromFile.length, 2, 'both published cities still count');
+  assert.strictEqual(fromFile.reduce((a, n) => a + n.count, 0), 2);
+  assert.strictEqual(merged.filter((n) => n.mine).length, 1, 'exactly one marker is theirs');
 });
 
 test('with no published file at all, the operator still sees their own city', () => {
