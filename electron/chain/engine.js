@@ -1282,7 +1282,13 @@ class ChainEngine extends EventEmitter {
     if (this._confirming) return;
     this._confirming = true;
     try {
-      const r = await validateWithNode(this.rpc, this.address.value);
+      // THE PROFILE, ALWAYS. This call omitted it, so it fell back to the
+      // module default - swarm-testnet - and on a mainnet build every
+      // pending re-check decided the owner's own s3 payout address
+      // "belongs to the other network". The address was fine and the node
+      // had already confirmed it; the Mining screen still said the node did
+      // not recognise it and told them to replace it.
+      const r = await validateWithNode(this.rpc, this.address.value, this.profile.id);
       if (r.confirmed === true && r.ok) {
         this.address = { value: r.address, kind: r.kind, detail: r.detail, confirmed: true };
         this.settings.payoutKind = r.kind;

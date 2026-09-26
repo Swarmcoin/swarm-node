@@ -36,12 +36,18 @@ const preload = fs.readFileSync(path.join(__dirname, '..', 'electron', 'preload.
 test('Settings has a Network control, and it is a real control', () => {
   assert.match(dashboard, /function NetworkCard\(/, 'the Network card must exist');
   assert.match(dashboard, /<NetworkCard s=\{s\} cfg=\{cfg\} \/>/, 'Settings must render it');
-  // A <select> labelled Network, not a table of words.
+  // A control labelled Network, not a table of words - and the app's OWN
+  // control. The first version was a bare native dropdown: a white box with
+  // the browser's chevron in a dark application, and the only one in the whole
+  // build. `.seg` is what the Mining page already uses for the mining mode, so
+  // this is not a restyle, it is the control that was already there.
   const card = dashboard.slice(dashboard.indexOf('function NetworkCard('), dashboard.indexOf('export function SettingsView'));
   assert.match(card, /<span>Network<\/span>/, 'the field must be labelled "Network"');
-  assert.match(card, /<select/, 'the networks must be selectable, not printed');
+  assert.match(card, /className="seg"/, 'the networks must be chosen with the app\'s own control');
+  assert.match(card, /role="radiogroup"/);
+  assert.ok(!/<select|<option/.test(card), 'no native dropdown: nothing else in this app is one');
   assert.match(card, /menuLabel/, 'the options must read "SWARM Mainnet" / "SWARM Testnet"');
-  assert.match(card, /disabled=\{!p\.selectable\}/, 'an unavailable network must be greyed, not hidden');
+  assert.match(card, /disabled=\{busy \|\| !p\.selectable\}/, 'an unavailable network must be greyed, not hidden');
   assert.match(card, /cannot be chosen in this build: \{p\.reason\}/, 'and it must say why');
 });
 

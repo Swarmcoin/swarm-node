@@ -598,23 +598,32 @@ function NetworkCard({ s, cfg }) {
         ports and its own kind of payout address, so switching never touches the other one.
       </p>
 
-      <label className="field" style={{ marginTop: 10 }}>
+      {/* The app's own segmented control (.seg), the same one the Mining page
+          uses for the mining mode. The first version of this was a bare
+          native dropdown: a white box with the browser's own chevron in the
+          middle of a dark application, and the only one anywhere in the
+          build. Nothing else here is a native dropdown, so this is not a
+          restyle - it is the control this app already has. */}
+      <div className="field" style={{ marginTop: 10 }}>
         <span>Network</span>
-        <select
-          value={cfg.networkProfile}
-          disabled={busy}
-          onChange={(e) => {
-            setError('');
-            setPending(e.target.value === cfg.networkProfile ? null : e.target.value);
-          }}
-        >
+        <div className="seg" role="radiogroup" aria-label="Network" style={{ marginTop: 7 }}>
           {profiles.map((p) => (
-            <option key={p.id} value={p.id} disabled={!p.selectable}>
-              {p.menuLabel}{p.selectable ? '' : ' — not available in this build'}
-            </option>
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={p.id === cfg.networkProfile}
+              className={p.id === cfg.networkProfile ? 'on' : ''}
+              disabled={busy || !p.selectable}
+              title={p.selectable ? `chain ${p.chainLabel}, port ${p.p2pPort}` : p.reason}
+              onClick={() => {
+                setError('');
+                setPending(p.id === cfg.networkProfile ? null : p.id);
+              }}
+            >{p.menuLabel}</button>
           ))}
-        </select>
-      </label>
+        </div>
+      </div>
 
       {/* What is running, in the values that identify a chain beyond argument. */}
       <table className="tbl" style={{ marginTop: 12 }}>
