@@ -5,7 +5,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { MapData, validate, validateLive, MAP_URL } = require('../electron/chain/map-data');
+const { MapData, validate, validateLive, MAP_URL, LIVE_URL, LIVE_URLS, ALLOWED } =
+  require('../electron/chain/map-data');
+const NP = require('../electron/chain/network-profile');
 
 const LIVE = {
   updated: '2026-09-21T17:23:00Z',
@@ -22,8 +24,57 @@ test('the live file is accepted as it stands', () => {
   assert.strictEqual(v.data.updated, '2026-09-21T17:23:00Z');
 });
 
-test('only one URL is ever fetched', () => {
+test('only allow-listed URLs are ever fetched', () => {
   assert.strictEqual(MAP_URL, 'https://swarm.green/data/swarm-map.json');
+  assert.deepStrictEqual(Object.keys(ALLOWED).sort(), [MAP_URL].concat(LIVE_URLS).sort());
+  // A plain object would answer `true` here and turn a prototype key into an
+  // https request; the allow-list has no prototype for that reason.
+  assert.ok(!ALLOWED['constructor']);
+  assert.ok(!ALLOWED['toString']);
+});
+
+// The live census belongs to ONE network. Hard-coded as the testnet's address,
+// it made a mainnet build draw the testnet seed's census - "1 node online,
+// Dallas" - while the owner's mainnet node was connected and counted in the
+// mainnet file nobody read.
+test('the live census address follows the network, per profile', () => {
+  assert.strictEqual(
+    NP.lightWalletUrls('swarm-testnet').liveMapUrl,
+    'https://lwd.swarm.green/swarm-map-live.json');
+  assert.strictEqual(
+    NP.lightWalletUrls('swarm-mainnet').liveMapUrl,
+    'https://lwd-main.swarm.green/swarm-map-live.json');
+  // Every network this build knows about has one, and no two share an address.
+  assert.strictEqual(new Set(LIVE_URLS).size, NP.PROFILES.length);
+});
+
+test('a MapData reads the census of the network it was given', () => {
+  const testnet = new MapData('unused-test-cache');
+  assert.strictEqual(testnet.liveUrl, LIVE_URL);
+  assert.strictEqual(testnet.liveUrl, NP.lightWalletUrls('swarm-testnet').liveMapUrl);
+  const mainnet = new MapData('unused-test-cache',
+    { liveUrl: NP.lightWalletUrls('swarm-mainnet').liveMapUrl });
+  assert.strictEqual(mainnet.liveUrl, 'https://lwd-main.swarm.green/swarm-map-live.json');
+  assert.notStrictEqual(mainnet.liveUrl, testnet.liveUrl);
+});
+
+test('an address off the allow-list is refused at construction, not fetched', () => {
+  for (const bad of ['https://evil.example/swarm-map-live.json',
+    'http://lwd-main.swarm.green/swarm-map-live.json',
+    'https://lwd-main.swarm.green/status.json']) {
+    assert.throws(() => new MapData('unused-test-cache', { liveUrl: bad }), /refusing/);
+  }
+});
+
+test('the reported source is this network’s census while one is live', async () => {
+  const map = new MapData('unused-test-cache',
+    { liveUrl: NP.lightWalletUrls('swarm-mainnet').liveMapUrl });
+  // A cached published list, so `get` has no reason to reach the network.
+  map.cached = { data: validate(LIVE).data, fetchedAt: Date.now() };
+  map.live = census().data;
+  map.liveFetchedAt = Date.now();
+  const result = await map.get();
+  assert.strictEqual(result.source, 'https://lwd-main.swarm.green/swarm-map-live.json');
 });
 
 test('impossible coordinates are dropped, not drawn somewhere wrong', () => {

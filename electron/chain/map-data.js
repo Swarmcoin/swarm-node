@@ -7,7 +7,8 @@
 // machine is offline. The live census is never written to disk.
 //
 // What this file will NOT do:
-//   * fetch anything except the one allow-listed URL;
+//   * fetch anything except an allow-listed URL, and only the two that
+//     belong to the network this build runs;
 //   * invent a city, a count or a date;
 //   * present stale data as current — the UI is told how old it is.
 //
@@ -19,11 +20,26 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const NP = require('./network-profile');
 
-// Two allow-listed URLs. Not a base, not a pattern, not a template.
+// The allow-list, enumerated. Not a base, not a pattern, not a template: it is
+// the published list plus ONE live-census URL per network this build knows
+// about, all of them written out by network-profile.js from its frozen profile
+// table. An instance fetches exactly two of these, and `fetchJson` refuses
+// every other address whatever a caller passes.
 const MAP_URL = 'https://swarm.green/data/swarm-map.json';
-const LIVE_URL = 'https://lwd.swarm.green/swarm-map-live.json';
-const ALLOWED = { [MAP_URL]: true, [LIVE_URL]: true };
+// The live census of THIS network's seed. Which one an instance uses is chosen
+// by the running profile; the testnet's address is the default only because a
+// build with no profile is a testnet build.
+const LIVE_URL = NP.lightWalletUrls('swarm-testnet').liveMapUrl;
+const LIVE_URLS = NP.PROFILES.map((p) => NP.lightWalletUrls(p.id).liveMapUrl);
+// Object.create(null), not `{}`: a lookup on a plain object answers `true`
+// for "constructor" and "toString", and this table is the only thing
+// standing between a caller's string and an https request.
+const ALLOWED = Object.create(null);
+ALLOWED[MAP_URL] = true;
+for (const url of LIVE_URLS) ALLOWED[url] = true;
+Object.freeze(ALLOWED);
 const MAX_BYTES = 256 * 1024;
 const TIMEOUT_MS = 12000;
 const MIN_REFRESH_MS = 10 * 60 * 1000;
@@ -138,8 +154,19 @@ function fetchJson(url) {
 }
 
 class MapData {
-  /** @param {string} cacheFile where the last good copy is kept */
-  constructor(cacheFile) {
+  /**
+   * @param {string} cacheFile where the last good copy is kept
+   * @param {{liveUrl?: string}} [options] the live census to read. It belongs
+   *   to one network, so the caller passes the running profile's
+   *   `lightWalletUrls(...).liveMapUrl`; anything not on the allow-list above
+   *   is refused here rather than fetched.
+   */
+  constructor(cacheFile, options) {
+    const liveUrl = (options && options.liveUrl) || LIVE_URL;
+    if (!ALLOWED[liveUrl]) {
+      throw new Error(`refusing an unknown live-map address: ${liveUrl}`);
+    }
+    this.liveUrl = liveUrl;
     this.cacheFile = cacheFile;
     this.lastFetchAt = 0;
     this.inFlight = null;
@@ -192,7 +219,7 @@ class MapData {
     // "connected right now" would be a lie the next time the app is offline.
     const liveDue = force || !this.live || now - (this.liveFetchedAt || 0) > 30 * 1000;
     if (liveDue && !this.liveInFlight) {
-      this.liveInFlight = fetchJson(LIVE_URL)
+      this.liveInFlight = fetchJson(this.liveUrl)
         .then((raw) => {
           const v = validateLive(raw);
           if (!v.ok) throw new Error(v.error);
@@ -219,9 +246,9 @@ class MapData {
       fetchedAt: live ? this.liveFetchedAt : (this.cached ? this.cached.fetchedAt : null),
       offline: !live && !!this.error,
       error: this.error,
-      source: live ? LIVE_URL : MAP_URL
+      source: live ? this.liveUrl : MAP_URL
     };
   }
 }
 
-module.exports = { MapData, validate, validateLive, MAP_URL, LIVE_URL };
+module.exports = { MapData, validate, validateLive, MAP_URL, LIVE_URL, LIVE_URLS, ALLOWED };

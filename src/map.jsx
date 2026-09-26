@@ -324,6 +324,12 @@ export function MapView({ cfg, s, reducedMotion }) {
   const nodeRunning = !!(s && s.node && s.node.running);
   const localPeers = nodeRunning && Number.isFinite(s.node.peers) ? s.node.peers : null;
   const seedPeers = net && net.ok && net.data && net.data.seedPeers != null ? net.data.seedPeers : null;
+  // The seed's address is NAMED on the page, so it must be the seed this
+  // build actually read. Hard-coded, it named the testnet host on a mainnet
+  // build - the same mistake that made the map draw the testnet's census.
+  const statusFrom = net && net.source
+    ? String(net.source).replace(/^https?:\/\//, '')
+    : 'the seed’s status file';
   const reach = seedPeers != null && !(net && net.stale)
     ? { value: seedPeers, label: 'Seed node peers', detail: 'connections the project’s seed node reports right now' }
     : localPeers != null
@@ -429,7 +435,7 @@ export function MapView({ cfg, s, reducedMotion }) {
           <b>“{reach.label}” is {reach.value == null ? 'not known' : nf.format(reach.value)}</b> —{' '}
           {reach.detail}.{' '}
           {seedPeers != null
-            ? <>Read from <span className="mono">lwd.swarm.green/status.json</span>, which the seed
+            ? <>Read from <span className="mono">{statusFrom}</span>, which the seed
               regenerates every 30 seconds{net && net.stale ? ' (this copy is older than that)' : ''}.
               It is a lower bound: it counts connections to one server, not everyone running SWARM.</>
             : net && net.error

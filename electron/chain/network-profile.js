@@ -240,7 +240,7 @@ function classifyPrefix(profile, raw) {
 }
 
 /**
- * The two https addresses that answer "how tall is this chain" for a profile.
+ * The https addresses this network's own seed server answers on.
  *
  * They must follow the network. A mainnet node measured against the testnet's
  * lightwalletd is not measured at all: the app shows no network height, and
@@ -251,7 +251,14 @@ function lightWalletUrls(profile) {
   return {
     host: p.lightWalletHost,
     tipOracleUrl: `https://${p.lightWalletHost}:443`,
-    statusUrl: `https://${p.lightWalletHost}/status.json`
+    statusUrl: `https://${p.lightWalletHost}/status.json`,
+    // The live census the Swarm map draws: the seed's current peers, grouped
+    // by city. It follows the network for the same reason the status file
+    // does. As a constant naming the testnet host, a MAINNET build drew the
+    // TESTNET seed's census - one dot, "1 node online, Dallas" - while the
+    // owner's mainnet node sat connected to the mainnet seed, counted in the
+    // mainnet file and never read.
+    liveMapUrl: `https://${p.lightWalletHost}/swarm-map-live.json`
   };
 }
 

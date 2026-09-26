@@ -725,8 +725,18 @@ app.whenReady().then(() => {
   hardenSession(session.defaultSession);
 
   // The swarm map's data is fetched HERE, not by the renderer, which keeps
-  // connect-src 'none' in the page. One URL, validated, cached on disk.
-  mapData = new MapData(path.join(app.getPath('userData'), 'swarm-map.cache.json'));
+  // connect-src 'none' in the page. Allow-listed URLs, validated, cached on
+  // disk.
+  //
+  // The live census follows the network, like every other figure the seed
+  // publishes. It did not: the address was a constant naming the TESTNET
+  // seed, so a mainnet build drew the testnet's census - "1 node online,
+  // Dallas" - while the owner's mainnet node sat connected to the mainnet
+  // seed, counted in the mainnet file and never read.
+  mapData = new MapData(
+    path.join(app.getPath('userData'), 'swarm-map.cache.json'),
+    { liveUrl: NP.lightWalletUrls(profile).liveMapUrl }
+  );
   // The one network-wide figure that can be checked: what the seed publishes
   // about itself. Refused outright if it is not this network. Never cached to
   // disk, because a stale "right now" number is a false one.
