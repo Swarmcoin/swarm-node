@@ -184,6 +184,10 @@ jobs:
 
       - name: Checksums and release manifest
         shell: bash
+        env:
+          # make-release-manifest.mjs read the TESTNET definition whatever the
+          # profile was, so a mainnet build recorded SwarmTestnet. It reads this.
+          SWARM_NETWORK_PROFILE: ${{ inputs.network_profile || 'swarm-testnet' }}
         run: |
           set -euo pipefail
           mkdir -p out

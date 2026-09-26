@@ -1,6 +1,6 @@
 {
   "name": "swarm-node",
-  "version": "0.2.0-testnet.8",
+  "version": "0.2.0-mainnet.1",
   "description": "SWARM Node \u00e2\u20ac\u201d run a full node of the SWARM testnet and mine with one click. Consent-first, one-click stop, nothing runs hidden.",
   "main": "electron/main.js",
   "author": "SWARM <swarmofficial@atomicmail.io>",
@@ -80,7 +80,7 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "SWARM Node",
-      "uninstallDisplayName": "SWARM Node (SWARM testnet)",
+      "uninstallDisplayName": "SWARM Node",
       "include": "build/installer.nsh",
       "deleteAppDataOnUninstall": false
     },
@@ -103,8 +103,8 @@
         }
       ],
       "category": "Network",
-      "synopsis": "Run a full node of the SWARM testnet and mine with one click",
-      "description": "SWARM Node keeps its own copy of the SWARM testnet chain, checks every block for itself, and mines with your processor when you press Start. Rewards are paid by the protocol straight to an address you paste from the SWARM Wallet. There is no account and no key in this app.",
+      "synopsis": "Run a full node of the SWARM network and mine with one click",
+      "description": "SWARM Node keeps its own copy of the SWARM chain, checks every block for itself, and mines with your processor when you press Start. Rewards are paid by the protocol straight to an address you paste from the SWARM Wallet. There is no account and no key in this app.",
       "icon": "build/icons",
       "executableArgs": []
     },

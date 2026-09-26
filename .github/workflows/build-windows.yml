@@ -163,11 +163,39 @@ jobs:
 
       - name: Checksums and release manifest
         shell: pwsh
+        env:
+          SWARM_NETWORK_PROFILE: ${{ inputs.network_profile || 'swarm-testnet' }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $net     = Get-Content electron/net/network.json -Raw | ConvertFrom-Json
           $bins    = Get-Content electron/net/binaries.json -Raw | ConvertFrom-Json
+
+          # WHICH network does this build describe? This read network.json - the
+          # TESTNET definition - whatever the profile was, so a mainnet build
+          # recorded SwarmTestnet / genesis 045993f5 / seed.swarm.green:18233 in
+          # the one file the owner reads before installing. The profile decides.
+          $profile  = $env:SWARM_NETWORK_PROFILE
+          $netFile  = if ($profile -eq 'swarm-testnet') { 'electron/net/network.json' }
+                      else { "electron/net/network-$($profile -replace '^swarm-','').json" }
+          if (-not (Test-Path -LiteralPath $netFile)) { throw "no network definition for $profile at $netFile" }
+          $net = Get-Content $netFile -Raw | ConvertFrom-Json
+          Write-Host "network profile $profile -> $netFile ($($net.identity.network_name), genesis $($net.genesis.hash))"
+
+          # A build ships every definition it carries and the user chooses in
+          # the app, so all of them are recorded beside the headline one.
+          $embedded = [ordered]@{}
+          foreach ($id in @('swarm-testnet','swarm-mainnet')) {
+            $f = if ($id -eq 'swarm-testnet') { 'electron/net/network.json' }
+                 else { "electron/net/network-$($id -replace '^swarm-','').json" }
+            if (Test-Path -LiteralPath $f) {
+              $m = Get-Content $f -Raw | ConvertFrom-Json
+              $embedded[$id] = [ordered]@{
+                name = $m.identity.network_name; magic = $m.identity.network_magic
+                genesis = $m.genesis.hash; p2p = $m.ports.public_p2p
+                seeds = $m.seed_peers; ticker = $m.identity.ticker
+              }
+            }
+          }
 
           New-Item -ItemType Directory -Force out | Out-Null
           # Only the two files electron-builder produced FOR THE USER, named
@@ -206,6 +234,7 @@ jobs:
             signing_note     = 'Unsigned. Windows SmartScreen will warn. See RELEASE-NOTES.md.'
             auto_update      = $false
             app_id           = 'green.swarm.node'
+            network_profile  = $profile
             network          = [ordered]@{
               name    = $net.identity.network_name
               magic   = $net.identity.network_magic
@@ -214,6 +243,7 @@ jobs:
               seeds   = $net.seed_peers
               ticker  = $net.identity.ticker
             }
+            embedded_networks = $embedded
             bundled_binaries = $bins
             files            = @($files | ForEach-Object {
               [ordered]@{

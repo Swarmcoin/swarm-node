@@ -30,8 +30,32 @@ if (signed && (!platformKey.startsWith('darwin') || !/^[a-f0-9-]{36}$/i.test(not
 
 const read = (p) => JSON.parse(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const pkg = read('package.json');
-const net = read('electron/net/network.json');
 const bins = read('electron/net/binaries.json');
+
+// WHICH network does this build describe?
+//
+// This read electron/net/network.json unconditionally, so a build made with
+// network_profile=swarm-mainnet still recorded the TESTNET identity - name
+// SwarmTestnet, genesis 045993f5..., seed.swarm.green:18233 - in the one file
+// the owner reads to know what they are about to install. The profile decides,
+// and because a build ships every definition it carries and the user chooses
+// inside the app, all of them are listed beside it.
+const profileId = process.env.SWARM_NETWORK_PROFILE || 'swarm-testnet';
+const fileForProfile = (id) =>
+  `electron/net/${id === 'swarm-testnet' ? 'network.json' : `network-${id.replace(/^swarm-/, '')}.json`}`;
+const describe = (m) => ({
+  name: m.identity.network_name,
+  magic: m.identity.network_magic,
+  genesis: m.genesis.hash,
+  p2p: m.ports.public_p2p,
+  seeds: m.seed_peers,
+  ticker: m.identity.ticker
+});
+const net = read(fileForProfile(profileId));
+const embedded = {};
+for (const id of ['swarm-testnet', 'swarm-mainnet']) {
+  if (fs.existsSync(path.join(ROOT, fileForProfile(id)))) embedded[id] = describe(read(fileForProfile(id)));
+}
 
 const files = fs.readdirSync(outDir)
   .filter((f) => f !== 'release-manifest.json' && fs.statSync(path.join(outDir, f)).isFile())
@@ -66,14 +90,9 @@ const manifest = {
     : 'Unsigned development build; not for browser-download distribution.',
   auto_update: false,
   app_id: 'green.swarm.node',
-  network: {
-    name: net.identity.network_name,
-    magic: net.identity.network_magic,
-    genesis: net.genesis.hash,
-    p2p: net.ports.public_p2p,
-    seeds: net.seed_peers,
-    ticker: net.identity.ticker
-  },
+  network_profile: profileId,
+  network: describe(net),
+  embedded_networks: embedded,
   bundled_binaries: bins,
   files
 };
