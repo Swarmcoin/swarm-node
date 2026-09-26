@@ -13,7 +13,12 @@
 //    node: the magic, the difficulty limit, the halving schedule, the
 //    activation heights, the 8/4/8 split. The configuration supplies only the
 //    genesis hash, the three destinations and two ports — so the test asserts
-//    what is ABSENT as much as what is present.
+//    what is ABSENT as much as what is present. And because a production
+//    configuration is read once, by a node nobody can reconfigure afterwards,
+//    the mainnet file has a golden copy of its own, rendered from a manifest
+//    with the shape the launch ceremony actually produces
+//    (network/swarm-mainnet/manifest.template.json with its five placeholders
+//    filled): the whole file, byte for byte, seed peer included.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -24,7 +29,9 @@ const { generateZebraConfig, ConfigError } = require('../electron/chain/config-g
 
 const TESTNET = require('../electron/net/network.json');
 const MAINNET = require('./fixtures/swarm-mainnet-manifest.json');
+const REHEARSAL = require('./fixtures/swarm-mainnet-rehearsal-manifest.json');
 const GOLDEN = path.join(__dirname, 'fixtures', 'golden-swarm-testnet-zebrad.toml');
+const GOLDEN_MAIN = path.join(__dirname, 'fixtures', 'golden-swarm-mainnet-zebrad.toml');
 
 const TESTNET_OPTS = {
   dataDir: 'C:/SWARM/chain',
@@ -44,19 +51,65 @@ const MAIN_OPTS = {
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
+/** The first line that differs, rather than two 2 kB blobs. */
+function firstDrift(golden, mine) {
+  const g = golden.toString('utf8').split('\n');
+  const m = mine.toString('utf8').split('\n');
+  const i = g.findIndex((l, n) => l !== m[n]);
+  return `line ${i + 1} drifted:\n  was: ${JSON.stringify(g[i])}\n  now: ${JSON.stringify(m[i])}`;
+}
+
 // ------------------------------------------------- the testnet, unchanged
 
 test('the whole testnet configuration is byte for byte what it was', () => {
   const golden = fs.readFileSync(GOLDEN);
   assert.ok(!golden.includes(0x0d), 'the golden file must have LF line endings; check .gitattributes');
   const mine = Buffer.from(generateZebraConfig(TESTNET, TESTNET_OPTS), 'utf8');
-  if (!golden.equals(mine)) {
-    // Show the first differing line rather than two 2 kB blobs.
-    const a = golden.toString('utf8').split('\n');
-    const b = mine.toString('utf8').split('\n');
-    const i = a.findIndex((l, n) => l !== b[n]);
-    assert.fail(`line ${i + 1} drifted:\n  was: ${JSON.stringify(a[i])}\n  now: ${JSON.stringify(b[i])}`);
-  }
+  if (!golden.equals(mine)) assert.fail(firstDrift(golden, mine));
+});
+
+test('the whole mainnet configuration is byte for byte what it was', () => {
+  const golden = fs.readFileSync(GOLDEN_MAIN);
+  assert.ok(!golden.includes(0x0d), 'the golden file must have LF line endings; check .gitattributes');
+  const mine = Buffer.from(generateZebraConfig(REHEARSAL, MAIN_OPTS), 'utf8');
+  if (!golden.equals(mine)) assert.fail(firstDrift(golden, mine));
+});
+
+test('the seed the manifest names is the seed the node is told to dial', () => {
+  // The whole point of `initial_swarm_main_peers`: without it a second
+  // SwarmMain node has no way to learn the first one exists, because neither
+  // upstream peer list is read on this network and the on-disk peer cache is
+  // empty until it has already connected to somebody
+  // (privacy-zebra 16c6a210f, zebra-network/src/config.rs).
+  assert.deepStrictEqual(REHEARSAL.seed_peers, ['seed-main.swarm.green:28233']);
+  const toml = generateZebraConfig(REHEARSAL, MAIN_OPTS);
+  assert.match(toml, /^initial_swarm_main_peers = \["seed-main\.swarm\.green:28233"\]$/m);
+  // It is a key of [network], so it has to be written before the
+  // [network.swarm_main] sub-table: after it, TOML reads it as part of the
+  // sub-table and the node rejects the file.
+  assert.ok(
+    toml.indexOf('initial_swarm_main_peers') < toml.indexOf('[network.swarm_main]'),
+    'initial_swarm_main_peers belongs to [network] and must precede [network.swarm_main]'
+  );
+  // The first node of the chain names nobody, and the key is then left out
+  // entirely rather than written empty.
+  const alone = generateZebraConfig({ ...REHEARSAL, seed_peers: [] }, MAIN_OPTS);
+  assert.doesNotMatch(alone, /initial_swarm_main_peers/);
+  // An operator's own list overrides the manifest's, and still has to be host:port.
+  const own = generateZebraConfig(REHEARSAL, { ...MAIN_OPTS, seedPeers: ['10.0.0.4:28233', 'node2.example.invalid:28233'] });
+  assert.match(own, /^initial_swarm_main_peers = \["10\.0\.0\.4:28233", "node2\.example\.invalid:28233"\]$/m);
+  assert.throws(() => generateZebraConfig(REHEARSAL, { ...MAIN_OPTS, seedPeers: ['seed-main.swarm.green'] }), /is not host:port/);
+});
+
+test('the port the listener binds is the port the section advertises', () => {
+  // The manifest calls the P2P port ports.public_p2p; reading it a second,
+  // different way for [network.swarm_main] let that section disagree with
+  // [network].listen_addr above it.
+  const m = clone(REHEARSAL);
+  m.ports.public_p2p = 29233;
+  const toml = generateZebraConfig(m, MAIN_OPTS);
+  assert.match(toml, /^listen_addr = "0\.0\.0\.0:29233"$/m);
+  assert.match(toml, /^p2p_port = 29233$/m);
 });
 
 // ------------------------------------------------------ the mainnet shape

@@ -40,6 +40,7 @@ network = "SwarmMainnet"
 listen_addr = "0.0.0.0:28233"
 initial_mainnet_peers = []
 initial_testnet_peers = []
+initial_swarm_main_peers = ["seed-main.swarm.green:28233"]
 cache_dir = false
 
 [network.swarm_main]
@@ -52,6 +53,28 @@ core_development = "s3..."
 grants_ecosystem = "s3..."
 community_reserve = "s3..."
 ```
+
+`initial_swarm_main_peers` is the one key that decides whether a machine can
+join the chain at all. Neither upstream peer list is read on `SwarmMain` -- both
+name Zcash DNS seeders, and a node that dials only foreign peers never finds
+its own network -- and the on-disk peer cache is empty until the node has
+already connected to somebody. So without this key a second SwarmMain node has
+no way to learn that the first one exists. It is a key of `[network]`, written
+**before** the `[network.swarm_main]` sub-table, because TOML would otherwise
+read it as part of that sub-table. It is filled from the manifest's
+`seed_peers`, so an owner's machine dials `seed-main.swarm.green:28233`. The
+seed node itself names nobody, and the key is then omitted entirely rather than
+written empty -- which is also what tells Zebra that node is alone on its chain
+and may mine at its own tip (`Config::has_no_peer_sources`). The key exists in
+zebrad from privacy-zebra `16c6a210f`; an older build rejects it.
+
+`test/mainnet-config-gen.test.js` holds the whole mainnet file still, the same
+way it holds the testnet one: `test/fixtures/golden-swarm-mainnet-zebrad.toml`
+is a byte-for-byte copy, rendered from
+`test/fixtures/swarm-mainnet-rehearsal-manifest.json` -- the vault's
+`network/swarm-mainnet/manifest.template.json` with its five ceremony
+placeholders filled by disposable values, so the golden has the shape the real
+manifest will have, seed peer included.
 
 Two testnet-only switches are deliberately absent on mainnet:
 `debug_enable_at_height`, which exists so a private testnet does not wait for a

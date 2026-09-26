@@ -1,0 +1,163 @@
+{
+  "schema": "swarm-network-manifest/1",
+  "status": "TEST FIXTURE ONLY. Not the SWARM mainnet definition. This is the vault's manifest.template.json with the five ceremony placeholders filled by disposable rehearsal values, so the golden file beside it is rendered from a manifest with the SHAPE the real one will have. The genesis hash is made up and the three destinations are addresses minted for this test.",
+  "normative_sources": [
+    "docs/SWARM-MAINNET-PROFILE.md (the [network.swarm_main] contract)",
+    "specs/ECONOMICS.md v0.4 (reward allocation and monetary base)",
+    "network/swarm-testnet/manifest.json (schema, and every value the production profile does not change)",
+    "network/swarm-rehearsal-main/manifest.json (the same production profile, rehearsed on a disposable chain)"
+  ],
+  "identity": {
+    "chain": "SWARM",
+    "ticker": "SWM",
+    "reward_nickname": "honey",
+    "network_name": "SwarmMainnet",
+    "network_kind": "SwarmProduction",
+    "network_magic": [
+      83,
+      87,
+      77,
+      78
+    ],
+    "network_magic_ascii": "SWMN",
+    "light_wallet_chain_label": "swarm-mainnet",
+    "transaction_domain": "0x53574d31 (SWM1), DomainRegistry::SWARM_PRODUCTION",
+    "identity_note": "network_kind is SwarmProduction, the desktop app's name for this profile; the node's own name for the network is SwarmMainnet, and it is never upstream Zcash Mainnet."
+  },
+  "consensus": {
+    "implementation": "Zebra 6.3.0 with the SwarmMain profile, unmodified consensus and cryptography",
+    "proof_of_work": "Equihash 200,9, inherited and unchanged",
+    "disable_pow": false,
+    "checkpoints": false,
+    "target_difficulty_limit": "07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "target_difficulty_limit_note": "Compiled into the node on SwarmMain; it is not configurable and does not appear in zebrad.toml.",
+    "minimum_difficulty_exception": false,
+    "accepted_transaction_versions": "V5 and V6 from height 1; V1-V4 rejected in blocks and the mempool; the genesis coinbase at height 0 is exempt",
+    "unshielded_coinbase_spends": false,
+    "difficulty_adjustment": "inherited Zcash per-block retarget, unchanged",
+    "target_spacing_seconds": 75,
+    "coinbase_maturity_blocks": 100,
+    "activation_heights": {
+      "BeforeOverwinter": 1,
+      "Overwinter": 1,
+      "Sapling": 1,
+      "Blossom": 1,
+      "Heartwood": 1,
+      "Canopy": 1,
+      "NU5": 1,
+      "NU6": 1,
+      "NU6.1": 1,
+      "NU6.2": 1,
+      "NU6.3": 1
+    }
+  },
+  "genesis": {
+    "hash": "11112222333344445555666677778888999900001111222233334444fedcba98",
+    "time_unix": 1758844800,
+    "time_utc": "2025-09-26T00:00:00Z",
+    "compact_target": "2007ffff",
+    "start_nonce": "0000000000000000000000000000000000000000000000000000000000000000",
+    "upstream_fixture": "zebra-test/src/vectors/block-test-0-000-000.txt",
+    "upstream_fixture_hash": "05a60a92d99d85997cce3b87616c089f6124d7342af37106edc76126334a2c38",
+    "hex_file": "genesis.hex",
+    "generator_manifest_file": "genesis-manifest.json",
+    "spendable_outputs": 0,
+    "premine": "none; upstream excludes genesis outputs from the UTXO set",
+    "hex_file_sha256": null,
+    "time_rule": "The header time must be in the PAST when the network starts. A block's time must exceed the median time past of its ancestors, and for block 1 that median is the genesis time, so a future genesis time blocks block 1 until the wall clock passes it.",
+    "generator": {
+      "tool": "privacy-miner genesis",
+      "note": "The genesis tool takes no --network: the block is the unchanged upstream fixture with a new header time, the fixed target 2007ffff and a solved nonce, so it is network-independent. The SwarmMain profile pins it by hash."
+    }
+  },
+  "economics": {
+    "source_spec": "specs/ECONOMICS.md v0.4",
+    "atomic_unit_per_coin": 100000000,
+    "era0_block_reward_coins": 6.25,
+    "miner_percent": 80,
+    "miner_note": "The miner receives the remainder of the subsidy after the three allocations, plus all transaction fees.",
+    "slow_start_interval": 0,
+    "pre_blossom_halving_interval": 840000,
+    "halving_interval_blocks": 1680000,
+    "extend_funding_stream_addresses_as_required": true,
+    "lockbox_disbursements": [],
+    "deferred_slot_used": false,
+    "funding_stream_height_range": {
+      "start": 1,
+      "end": 50399999,
+      "end_is_exclusive": true,
+      "note": "One range covers the whole emission schedule: every block with a non-zero reward."
+    },
+    "recipients": [
+      {
+        "label": "Core Development",
+        "upstream_slot": "ECC",
+        "upstream_rpc_name_post_nu6": "Electric Coin Company",
+        "swarm_slot": "core_development",
+        "numerator": 8,
+        "percent": 8,
+        "era0_coins_per_block": 0.5,
+        "era0_zatoshi_per_block": 50000000,
+        "address": "s3XQAEbW98DwCkm2BVbeXnkjYCHTfbVSdQH",
+        "address_type": "SWARM production P2SH multisig (s3...)",
+        "signing_threshold": "2 of 3"
+      },
+      {
+        "label": "Grants & Ecosystem",
+        "upstream_slot": "MajorGrants",
+        "upstream_rpc_name_post_nu6": "Zcash Community Grants NU6",
+        "swarm_slot": "grants_ecosystem",
+        "numerator": 4,
+        "percent": 4,
+        "era0_coins_per_block": 0.25,
+        "era0_zatoshi_per_block": 25000000,
+        "address": "s3Ya32FvTepiaNQVZbE7outyXuvFe1rqmbF",
+        "address_type": "SWARM production P2SH multisig (s3...)",
+        "signing_threshold": "2 of 3"
+      },
+      {
+        "label": "Community & Development Reserve",
+        "upstream_slot": "ZcashFoundation",
+        "upstream_rpc_name_post_nu6": "Zcash Foundation",
+        "swarm_slot": "community_reserve",
+        "numerator": 8,
+        "percent": 8,
+        "era0_coins_per_block": 0.5,
+        "era0_zatoshi_per_block": 50000000,
+        "address": "s3keLR3h9JgxCarwHpaRDptdR4nZNXD6qBv",
+        "address_type": "SWARM production P2SH multisig (s3...)",
+        "signing_threshold": "2 of 3"
+      }
+    ],
+    "immutability": "The percentages are part of the network definition every node loads. There is no admin key, vote, on-chain parameter or RPC that can change them. A destination can only change through a protocol upgrade that participants adopt together.",
+    "rpc_naming_note": "getblocksubsidy prints the upstream slot names. ECC is Core Development, MajorGrants is Grants & Ecosystem, ZcashFoundation is the Community & Development Reserve."
+  },
+  "ports": {
+    "public_p2p": 28233,
+    "public_p2p_note": "The SwarmMain default. Written to zebrad.toml so an operator can read it, never so that the network can be changed.",
+    "rpc": 28232,
+    "rpc_note": "Loopback only. The node RPC is never exposed publicly; cookie authentication stays enabled.",
+    "lightwallet_grpc": 8443,
+    "lightwallet_grpc_note": "Zaino behind TLS on lwd-main.swarm.green; 8443 is the public TLS port, not Zaino's own listener."
+  },
+  "seed_peers": [
+    "seed-main.swarm.green:28233"
+  ],
+  "seed_peers_note": "There is no DNS seeder for a custom network, so this is a static name with one A record per seed node. Zebra makes one outbound connection per IP, so a second seed needs its own public IP.",
+  "light_wallet_servers": [
+    "lwd-main.swarm.green:8443"
+  ],
+  "light_wallet_servers_note": "The light-wallet endpoint the SWARM Wallet uses on this network. TLS, no plaintext fallback.",
+  "destination_addresses": {
+    "state": "produced by the launch key ceremony",
+    "shape": "2-of-3 multisig per destination; the same three signers in a different key ORDER per fund, so each fund has its own redeem script, its own script hash and its own s3 address",
+    "tool": "swarm-treasury (offline) and swarm-keytool, from the pinned mainnet tool release",
+    "requirement": "Every recipient must be a SWARM production P2SH address (s3...). zebra-consensus asserts 'address must be P2SH' and the node panics on anything else.",
+    "custody": "Whoever holds two of the three key shares controls that destination's coins. Custody is the owner's; no agent ever holds a share.",
+    "see": "network/swarm-mainnet/DESTINATIONS.md"
+  },
+  "sync_gate": {
+    "min_peers": 1,
+    "max_tip_age_seconds": 900
+  }
+}

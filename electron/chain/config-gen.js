@@ -167,7 +167,7 @@ function commonOptions(manifest, opts, profile) {
  */
 function generateSwarmMainConfig(manifest, opts, profile) {
   const genesisHash = requireHex((manifest.genesis || {}).hash || '', 32, 'genesis.hash');
-  const { dataDir, rpcPort, p2pListen, cpuThreads, internalMiner, minerAddress } = commonOptions(manifest, opts, profile);
+  const { dataDir, p2pPort, rpcPort, p2pListen, cpuThreads, internalMiner, minerAddress } = commonOptions(manifest, opts, profile);
 
   // The three destinations, by SWARM slot. The mapping from a manifest's
   // recorded receiver to the slot is fixed in network-profile.js, so a
@@ -217,7 +217,11 @@ function generateSwarmMainConfig(manifest, opts, profile) {
   L.push('# configured, so this app cannot change what the network is.');
   L.push(`[${profile.configSection}]`);
   L.push(`genesis_hash = ${tomlString(genesisHash)}`);
-  L.push(`p2p_port = ${requirePort((manifest.ports || {}).p2p == null ? profile.ports.p2p : manifest.ports.p2p, 'ports.p2p')}`);
+  // The same two numbers `listen_addr` and the RPC listener were built from,
+  // resolved once in commonOptions: the manifest names the P2P port
+  // `public_p2p`, and reading it a second way here let the section disagree
+  // with the listener above.
+  L.push(`p2p_port = ${p2pPort}`);
   L.push(`rpc_port = ${requirePort((manifest.ports || {}).rpc == null ? profile.ports.rpc : manifest.ports.rpc, 'ports.rpc')}`);
   L.push('');
 

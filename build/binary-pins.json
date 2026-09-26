@@ -52,46 +52,46 @@
       "label": "SWARM mainnet",
       "repo": "Swarm-Official/privacy-zebra",
       "repo_note": "privacy-zebra is PUBLIC, so its release assets are readable from a build of this private repository with no cross-repository token. The mainnet tools are published there, next to the source they were built from, as one archive per platform.",
-      "tag": "vendored-binaries-mainnet-1",
+      "tag": "vendored-binaries-mainnet-2",
       "layout": "archive",
       "source_repo": "Swarm-Official/privacy-zebra",
       "source_branch": "codex/mainnet-ci-20260926",
-      "source_commit": "46085047634b00c811509461b48b1e32ff168059",
-      "source_tree_of": "ae7cfaf92 (tree 13991502ebca0ec38e5f399376fea6dbf494a828); the commit is the mainnet integration HEAD 1301ff1a5 plus the workflow file",
-      "source_workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/36214297918",
-      "requires": "A zebrad built with Network::SwarmMain. An older zebrad rejects [network.swarm_main] while deserialising its configuration, and cannot report chain \"swarm-mainnet\" — see docs/NETWORK-PROFILES.md.",
+      "source_commit": "f5b2750068e5f942f75b6630ecad14fac25a7963",
+      "source_tree_of": "the mainnet integration HEAD 01b9da3de plus the workflow file; 01b9da3de adds the treasury fee fix and 16c6a210f the `initial_swarm_main_peers` config key",
+      "source_workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/36217735742",
+      "requires": "A zebrad built with Network::SwarmMain, from privacy-zebra 16c6a210f or later. An older zebrad rejects [network.swarm_main] while deserialising its configuration, and one older than 16c6a210f also rejects the `initial_swarm_main_peers` key this app writes under [network] - without which a node cannot be pointed at seed-main.swarm.green at all. See docs/NETWORK-PROFILES.md.",
       "platforms": {
         "win-x64": {
           "archive": "swarm-tools-v6.3.0-x86_64-pc-windows-msvc.zip",
-          "archive_sha": "521ef54219b30baf6b8087646148bf27b762a978a162d0c550afcafc2677c3a8",
+          "archive_sha": "39a70fac517372f0af4ce580f037ad11ea21fead751818a6166e1c2d09412b1e",
           "node_member": "zebrad.exe",
-          "node_sha": "85523b97412ee46829c557c7ace638bad0c46803fbd492e6d5491960d8eab0a2",
+          "node_sha": "2bf0f0255ef4dd2cd26e27271034daf012fb004c893f3e9ade01c7d3404f9432",
           "miner_member": "privacy-miner.exe",
-          "miner_sha": "0f01a3dbf277dc50f360f52a935c8697d41324a27384592506d4c6ed63135720"
+          "miner_sha": "c432d9a003facfd33b40c5d0909cd6211b9a711b6e42202f091bfe90468b8ea8"
         },
         "linux-x64": {
           "archive": "swarm-tools-v6.3.0-x86_64-unknown-linux-gnu.tar.gz",
-          "archive_sha": "0080d4d43542797874ff15b54bb6b26f377925bbc9c5505f96e97f48d67e2c1f",
+          "archive_sha": "fd3442f6d6233d4ad8f5f990791beb3b56a82d73c3538859f53b2459b527f1dd",
           "node_member": "zebrad",
-          "node_sha": "fd35083d600dc69fdd4795dd56f41545d6441c0d4c498de80c1a126cb8e251e3",
+          "node_sha": "2d3511de0ca581fa33f180502d4d652cbb9ea19bfcb3d750d4718aaaca4ac418",
           "miner_member": "privacy-miner",
-          "miner_sha": "9b3bc83e2020440d28bf31f31829e5d26abd2206ea2371969c16f5df5636aa44"
+          "miner_sha": "550b63085ca2efa476a8490f1d64dca44fcf1c0e94947a7e1982a34535d3d9b0"
         },
         "darwin-arm64": {
           "archive": "swarm-tools-v6.3.0-aarch64-apple-darwin.tar.gz",
-          "archive_sha": "faa7e359448750b043162f8608ddb6a8a9228411f3f7357dd7b9aa9ac76165c1",
+          "archive_sha": "f349491b0079e5f2cda6e94cce8f9dcffc7633dc94f70ac07a4238e0cc78012c",
           "node_member": "zebrad",
-          "node_sha": "dd52582b743f9b849af6bbbbf8068ff5352d54a249c828a4b117944d62aec9bc",
+          "node_sha": "6c2e781ee0386a9cde9a772cd5cb3041c0182cf21e36fefe86c205dbe2340845",
           "miner_member": "privacy-miner",
-          "miner_sha": "ebc3afffdf19e59e249792f063b4af4e649462dbd8ffe3fb6710215e59275158"
+          "miner_sha": "86549181bb7bf8574bdb016ba7c39c1a1bd5aa0a979746a21a050c6e40a86fd9"
         },
         "darwin-x64": {
           "archive": "swarm-tools-v6.3.0-x86_64-apple-darwin.tar.gz",
-          "archive_sha": "9ee801d6b6a7442c1195315408d0122982390004dd400ec3e961024066759f2e",
+          "archive_sha": "31ec7d5758bf26ff688763764e8786fff8c288f9ebf43b9c7b80c77be07b43a7",
           "node_member": "zebrad",
-          "node_sha": "9e04c49d84edc5a12bb078b98e62cd5a647325a82f141ab5d54b163d4c0c4bb8",
+          "node_sha": "5812b34177d2688a552375567db9f1a4a7fe567f709cf4b97d54ea0b1284a8c3",
           "miner_member": "privacy-miner",
-          "miner_sha": "0087300e9418804b866b35feebbecbf31341a615f664c50ce2059393fbbcecad"
+          "miner_sha": "cfad03ddb59456ca9513062b93942ecfff1a9c3f17d7f33db1cc143587083882"
         }
       }
     }
