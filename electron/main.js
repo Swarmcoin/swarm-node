@@ -427,7 +427,11 @@ function registerIpc() {
     const next = {
       networkProfile: wanted,
       networkProfileChosenForBuild: buildProfile.id,
-      networkProfileChosenAt: new Date().toISOString()
+      networkProfileChosenAt: new Date().toISOString(),
+      // The ports belong to the profile that is being left. Clearing the
+      // marker is enough: the next start writes the new profile's own, and
+      // says so in the log.
+      portsForProfile: null
     };
     // A payout address belongs to a network. Carrying a swarm1... testnet
     // address onto SWARM mainnet would point the miner at an address that
@@ -697,6 +701,25 @@ app.whenReady().then(() => {
   // state is a wrong-chain node, and the state database cannot be shared.
   if (!settings.data[profile.dataDirSetting]) {
     settings.save({ [profile.dataDirSetting]: path.join(app.getPath('userData'), profile.dataDirName) });
+  }
+
+  // And its own ports. The stored ones belong to whichever profile was running
+  // when they were written - and on a fresh install they come from the
+  // bootstrap manifest, which is always the testnet's. A mainnet node was
+  // therefore started with listen_addr 0.0.0.0:18233 and RPC 18232 while its
+  // own [network.swarm_main] section said 28233 / 28232.
+  if (settings.data.portsForProfile !== profile.id) {
+    console.log(
+      `[network] ports ${settings.data.p2pPort}/${settings.data.rpcPort} belong to ` +
+      `${settings.data.portsForProfile || 'no profile'}; using ${profile.label}'s ${profile.ports.p2p}/${profile.ports.rpc}`
+    );
+    settings.save({
+      portsForProfile: profile.id,
+      p2pPort: profile.ports.p2p,
+      rpcPort: profile.ports.rpc,
+      // A listen address pinned to the other network's port is worse than none.
+      p2pListen: null
+    });
   }
 
   hardenSession(session.defaultSession);

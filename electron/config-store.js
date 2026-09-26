@@ -55,6 +55,19 @@ function defaults(manifest) {
     // The mainnet chain folder, kept apart from the testnet one: two chains
     // cannot share a state database.
     dataDirMainnet: null,
+    // WHICH PROFILE THESE PORTS BELONG TO.
+    //
+    // The defaults below are built from the bootstrap manifest, which is
+    // always the testnet one, and a settings file written by an earlier
+    // install carries the testnet ports outright. Both won over the profile,
+    // so a SWARM mainnet node ran with listen_addr 0.0.0.0:18233 and its RPC
+    // on 18232 - the testnet's ports - while [network.swarm_main] said 28233 /
+    // 28232. It synced, because dialling out does not depend on the listening
+    // port, but nothing could reach it, it could not coexist with a testnet
+    // node, and the app's own screens disagreed with each other about the
+    // port. Ports are reset to the profile's own whenever this does not name
+    // the running profile; a port the user changed FOR that profile survives.
+    portsForProfile: null,
     p2pPort: Number(ports.p2p) || 18233,
     rpcPort: Number(ports.rpc) || 18232,
     p2pListen: null,

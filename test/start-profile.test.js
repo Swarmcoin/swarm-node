@@ -232,3 +232,25 @@ test('the node the mainnet pins name is recorded as a SwarmMainnet node', () => 
   }
   assert.match(mk, /network: 'SwarmMainnet'/);
 });
+
+test('the ports belong to the profile, not to whatever was stored', () => {
+  // A mainnet node ran on listen_addr 0.0.0.0:18233 with RPC 18232 - the
+  // TESTNET's ports - while its own [network.swarm_main] section said
+  // 28233 / 28232, because the defaults come from the bootstrap (testnet)
+  // manifest and an earlier install's settings carried the same values.
+  const { defaults } = require('../electron/config-store');
+  const d = defaults({});
+  assert.strictEqual(d.portsForProfile, null, 'stored ports must name the profile they belong to');
+
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
+  assert.match(main, /settings\.data\.portsForProfile !== profile\.id/, 'the boot must reset ports that belong elsewhere');
+  assert.match(main, /p2pPort: profile\.ports\.p2p/);
+  assert.match(main, /rpcPort: profile\.ports\.rpc/);
+  // And switching network must not carry the old profile's ports across.
+  const handler = main.slice(main.indexOf("handle('shell:setNetworkProfile'"), main.indexOf("handle('shell:restartApp'"));
+  assert.match(handler, /portsForProfile: null/);
+
+  // The two profiles really do differ, or none of this would matter.
+  assert.deepStrictEqual(NP.profileById('swarm-testnet').ports, { p2p: 18233, rpc: 18232 });
+  assert.deepStrictEqual(NP.profileById('swarm-mainnet').ports, { p2p: 28233, rpc: 28232 });
+});
