@@ -38,6 +38,10 @@ function requireCleanSource() {
 if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Build on an Apple-silicon Mac with native arm64 Node.js');
 if (process.versions.node.split('.')[0] !== '22') throw new Error('Use Node.js 22 for SWARM Node');
 if (!profile) throw new Error('Set APPLE_KEYCHAIN_PROFILE to an owner-configured notarytool profile name');
+if (process.env.SWARM_NETWORK_PROFILE && process.env.SWARM_NETWORK_PROFILE !== 'swarm-mainnet') {
+  throw new Error('The mainnet release cannot be built with another network profile');
+}
+process.env.SWARM_NETWORK_PROFILE = 'swarm-mainnet';
 for (const key of ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER']) {
   if (process.env[key]) throw new Error(`Unset ${key}; notarization must use the Keychain profile`);
 }
@@ -84,6 +88,7 @@ if (fs.readdirSync(binDir).some((name) => /keytool|\.keys\.json$|^cookie$|\.env/
 
 run('node', ['scripts/make-binaries-manifest.mjs', '--platform', `darwin-${arch}`]);
 run('node', ['scripts/prepare-mac-signed-binaries.mjs', '--arch', arch]);
+run('node', ['scripts/set-build-profile.mjs', 'swarm-mainnet']);
 run('npm', ['run', 'build:ui']);
 run('npx', ['electron-builder', '--mac', `--${arch}`, '--config', 'configs/swarm-mac-developer-id.cjs', '--publish', 'never'],
   { env: { ...process.env, SWARM_MAC_ARCH: arch } });

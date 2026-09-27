@@ -39,7 +39,7 @@ the final DMG, then recreates the ZIP from the stapled app. Its output is
 Intel output is written to `release-mac-signed-x64/out/`. The separate output
 directory is deliberately refused if it already exists. When building both
 architectures in one checkout, restore the generated `electron/net/binaries.json`
-to the reviewed commit between builds.
+and `electron/net/build-profile.json` to the reviewed commit between builds.
 
 Before release, install a **fresh browser download** with default Gatekeeper
 settings and verify `codesign --verify --deep --strict`, `spctl --assess`, and

@@ -12,10 +12,15 @@ module.exports = async function verifyMacSignedApp(context) {
   const app = path.join(context.appOutDir, "SWARM Node.app");
   const archive = path.join(app, "Contents/Resources/app.asar");
   const manifest = JSON.parse(asar.extractFile(archive, "electron/net/binaries.json").toString());
+  const buildProfile = JSON.parse(asar.extractFile(archive, "electron/net/build-profile.json").toString());
+  if (buildProfile.profile !== "swarm-mainnet") throw new Error("The packaged Mac app is not a mainnet build");
   const arch = Arch[context.arch];
   if (!["arm64", "x64"].includes(arch)) throw new Error(`Unexpected macOS architecture: ${arch}`);
   const expected = manifest.platforms?.[`darwin-${arch}`];
   if (!expected?.zebrad || !expected?.miner) throw new Error(`No signed ${arch} binary hashes in app.asar`);
+  if (expected.zebrad.network !== "SwarmMainnet" || expected.miner.network !== "SwarmMainnet") {
+    throw new Error("The packaged Mac binaries are not the pinned mainnet build");
+  }
   for (const kind of ["zebrad", "miner"]) {
     const entry = expected[kind];
     const file = path.join(app, "Contents/Resources/bin", entry.file);
