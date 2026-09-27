@@ -19,6 +19,10 @@ name: Build Linux and macOS packages
 on:
   workflow_dispatch:
     inputs:
+      verify_signed_intel:
+        description: 'Verify the published signed mainnet Intel DMG on an Intel Mac'
+        type: boolean
+        default: false
       network_profile:
         description: 'Which SWARM network this build is for: swarm-testnet or swarm-mainnet'
         required: false
@@ -40,6 +44,7 @@ permissions:
 
 jobs:
   select-platforms:
+    if: ${{ !inputs.verify_signed_intel }}
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.select.outputs.result }}
@@ -286,3 +291,47 @@ jobs:
           name: smoke-${{ matrix.key }}
           path: smoke
           retention-days: 7
+
+  verify-signed-intel:
+    if: ${{ inputs.verify_signed_intel }}
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install verification dependencies
+        run: npm ci
+      - name: Download and hash the published Intel packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p signed-intel
+          gh release download swarm-node-0.2.0-mainnet.5 \
+            --repo Swarm-Official/swarm-releases \
+            --pattern 'SWARM-Node-0.2.0-mainnet.5-mac-x64.*' \
+            --pattern 'SHA256SUMS-mac-x64' --dir signed-intel
+          cd signed-intel
+          shasum -a 256 -c SHA256SUMS-mac-x64
+      - name: Verify Gatekeeper and launch the published Intel app
+        run: |
+          set -euo pipefail
+          dmg=signed-intel/SWARM-Node-0.2.0-mainnet.5-mac-x64.dmg
+          hdiutil verify "$dmg"
+          xcrun stapler validate "$dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint /Volumes/SWARM-Node-Intel-Verify "$dmg"
+          app='/Volumes/SWARM-Node-Intel-Verify/SWARM Node.app'
+          bash scripts/check-arch.sh /Volumes/SWARM-Node-Intel-Verify x64
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          node -e 'const a=require("@electron/asar"); const p=process.argv[1]; const v=JSON.parse(a.extractFile(p,"electron/net/build-profile.json")); if(v.profile!=="swarm-mainnet") throw Error(`wrong profile: ${v.profile}`);' "$app/Contents/Resources/app.asar"
+          "$app/Contents/Resources/bin/swarm-node-daemon" --version
+          "$app/Contents/Resources/bin/swarm-miner" --help >/dev/null
+          node scripts/smoke-renderer.mjs "$app/Contents/MacOS" signed-intel/smoke
+          ditto -x -k signed-intel/SWARM-Node-0.2.0-mainnet.5-mac-x64.zip signed-intel/zip-app
+          codesign --verify --deep --strict 'signed-intel/zip-app/SWARM Node.app'
+      - name: Detach the test image
+        if: always()
+        run: hdiutil detach /Volumes/SWARM-Node-Intel-Verify || true
