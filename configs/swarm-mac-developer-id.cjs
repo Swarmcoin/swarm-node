@@ -4,14 +4,16 @@
 // package.json remains the unsigned development baseline for other platforms.
 const { developerIdIdentity } = require("../scripts/mac-distribution-identity.cjs");
 const base = require("../package.json").build;
+const arch = process.env.SWARM_MAC_ARCH || "arm64";
+if (!["arm64", "x64"].includes(arch)) throw new Error(`Unsupported SWARM_MAC_ARCH: ${arch}`);
 
 module.exports = {
   ...base,
-  directories: { ...base.directories, output: "release-mac-signed" },
+  directories: { ...base.directories, output: arch === "x64" ? "release-mac-signed-x64" : "release-mac-signed" },
   afterSign: "./scripts/verify-mac-signed-app.cjs",
   mac: {
     ...base.mac,
-    target: [{ target: "dmg", arch: ["arm64"] }, { target: "zip", arch: ["arm64"] }],
+    target: [{ target: "dmg", arch: [arch] }, { target: "zip", arch: [arch] }],
     // electron-builder selects the Developer ID certificate type itself and
     // rejects the "Developer ID Application:" prefix in an explicit identity.
     identity: developerIdIdentity().replace(/^Developer ID Application:\s*/, ""),

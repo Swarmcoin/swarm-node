@@ -5,14 +5,17 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync, spawnSync } = require("node:child_process");
 const asar = require("@electron/asar");
+const { Arch } = require("builder-util");
 
 module.exports = async function verifyMacSignedApp(context) {
   if (context.electronPlatformName !== "darwin") throw new Error("Expected a macOS build");
   const app = path.join(context.appOutDir, "SWARM Node.app");
   const archive = path.join(app, "Contents/Resources/app.asar");
   const manifest = JSON.parse(asar.extractFile(archive, "electron/net/binaries.json").toString());
-  const expected = manifest.platforms?.["darwin-arm64"];
-  if (!expected?.zebrad || !expected?.miner) throw new Error("No signed arm64 binary hashes in app.asar");
+  const arch = Arch[context.arch];
+  if (!["arm64", "x64"].includes(arch)) throw new Error(`Unexpected macOS architecture: ${arch}`);
+  const expected = manifest.platforms?.[`darwin-${arch}`];
+  if (!expected?.zebrad || !expected?.miner) throw new Error(`No signed ${arch} binary hashes in app.asar`);
   for (const kind of ["zebrad", "miner"]) {
     const entry = expected[kind];
     const file = path.join(app, "Contents/Resources/bin", entry.file);

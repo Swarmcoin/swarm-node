@@ -1,9 +1,9 @@
-# Apple-silicon direct-download build
+# macOS direct-download build
 
-This path builds `0.2.0-testnet.8` from the reconciled desktop node source,
-with the native binaries from `vendored-binaries-prefix-1`. It does not upload
-to a GitHub release or touch node settings or chain data. This reconciled source
-has not yet been signed or tested on macOS.
+This path signs and notarizes `0.2.0-mainnet.5` for Apple silicon and Intel.
+It fetches the reviewed mainnet daemon and miner from
+`vendored-binaries-mainnet-2`, verifies their hashes against
+`build/binary-pins.json`, and does not touch node settings or chain data.
 
 Prerequisites:
 
@@ -20,11 +20,13 @@ Prerequisites:
 ```sh
 npm ci
 npm run check
-mkdir -p staging
-gh release download vendored-binaries-prefix-1 \
-  -R Swarm-Official/swarm-node \
-  -p zebrad-darwin-arm64 -p privacy-miner-darwin-arm64 -D staging
 APPLE_KEYCHAIN_PROFILE=SWARM-notary node scripts/build-mac-distribution.mjs
+```
+
+For Intel, use the same clean source checkout and pass `--arch x64`:
+
+```sh
+APPLE_KEYCHAIN_PROFILE=SWARM-notary node scripts/build-mac-distribution.mjs --arch x64
 ```
 
 The build script verifies the original assets against the reviewed SHA256
@@ -34,7 +36,10 @@ signs Electron and the outer app, and verifies that the installed daemon/miner
 still match the hashes inside `app.asar`. It notarizes and staples the app and
 the final DMG, then recreates the ZIP from the stapled app. Its output is
 `release-mac-signed/out/` with a DMG, ZIP, `SHA256SUMS` and a release manifest.
-The separate output directory is deliberately refused if it already exists.
+Intel output is written to `release-mac-signed-x64/out/`. The separate output
+directory is deliberately refused if it already exists. When building both
+architectures in one checkout, restore the generated `electron/net/binaries.json`
+to the reviewed commit between builds.
 
 Before release, install a **fresh browser download** with default Gatekeeper
 settings and verify `codesign --verify --deep --strict`, `spctl --assess`, and

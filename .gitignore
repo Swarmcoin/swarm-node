@@ -2,6 +2,7 @@ node_modules/
 dist/
 release/
 release-mac-signed/
+release-mac-signed-x64/
 staging/
 resources/bin/
 *.log
