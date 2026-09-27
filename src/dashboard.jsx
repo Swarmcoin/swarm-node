@@ -446,7 +446,7 @@ export function NodeView({ s, api, cfg }) {
                 <td className="num">
                   {s.mining.mode === 'shielded'
                     ? (s.mining.on
-                        ? `inside the node (${s.mining.intensity} ${s.mining.intensity === 1 ? 'thread' : 'threads'})`
+                        ? `inside the node (${s.mining.runningShieldedThreads || s.mining.intensity} ${(s.mining.runningShieldedThreads || s.mining.intensity) === 1 ? 'thread' : 'threads'})`
                         : 'none')
                     : (s.mining.pids && s.mining.pids.length
                         ? s.mining.pids.map((p) => `PID ${p}`).join(', ')

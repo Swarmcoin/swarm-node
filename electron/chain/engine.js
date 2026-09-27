@@ -152,6 +152,9 @@ class ChainEngine extends EventEmitter {
     // a reading older than SOLVER_RATE_MAX_AGE_MS is dropped rather than shown
     // as if it were current.
     this.solverRate = null;
+    // How many solver threads the running node was started with, frozen at
+    // start because that is the only time the node reads the setting.
+    this.startedShieldedThreads = null;
   }
 
   // ---------------------------------------------------------------- logging
@@ -228,8 +231,24 @@ class ChainEngine extends EventEmitter {
     };
   }
 
+  /**
+   * How many solver threads the RUNNING node was started with, or null when no
+   * node is running its own miner.
+   *
+   * This is not the same as the slider: the node reads the thread count once,
+   * at start, so after the slider moves the two disagree until the next start.
+   * The Node page reports what is actually running, not what is wanted.
+   */
+  runningShieldedThreads() {
+    if (!this.node || !this.node.running) return null;
+    return this.startedShieldedThreads;
+  }
+
   async startNode() {
     if (this.node && this.node.running) return { ok: true, alreadyRunning: true };
+
+    // Frozen for as long as this node runs: the node reads the count once.
+    this.startedShieldedThreads = this.nodeConfigOptions().internalMinerThreads;
 
     const bin = requireBinary('zebrad', { allowUnpinned: this.allowUnpinned });
     if (!bin.ok) {
@@ -1218,6 +1237,8 @@ class ChainEngine extends EventEmitter {
         workers: this.pool ? this.pool.workerCount : 0,
         pids: this.pool ? this.pool.workers.map((w) => w.pid).filter(Boolean) : [],
         intensity: this.effectiveWorkerCount(),
+        // What the running node's own miner was actually started with.
+        runningShieldedThreads: this.runningShieldedThreads(),
         maxWorkers: Math.max(1, (require('os').cpus().length || 2) - 1),
         armed: this.mining.armed === true,
         wanted: this.mining.wanted === true,

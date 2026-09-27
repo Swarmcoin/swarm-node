@@ -105,7 +105,7 @@ pins are therefore per profile, in `build/binary-pins.json`:
 | profile | release | layout |
 | --- | --- | --- |
 | `swarm-testnet` | `vendored-binaries-prefix-1` in **this** repository | one asset per binary |
-| `swarm-mainnet` | `vendored-binaries-mainnet-1` in the **public** `Swarm-Official/privacy-zebra` | one archive per platform |
+| `swarm-mainnet` | `vendored-binaries-mainnet-3` in the **public** `Swarm-Official/privacy-zebra` | one archive per platform |
 
 Locally:
 
