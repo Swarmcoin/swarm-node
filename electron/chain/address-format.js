@@ -47,7 +47,7 @@ const KINDS = {
     kind: 'unified',
     mode: 'shielded',
     label: 'Unified address',
-    detail: 'Rewards paid to it are private. It works with shielded mining, which runs on one core inside the node.'
+    detail: 'Rewards paid to it are private. It works with shielded mining, which runs inside the node and uses as many processor cores as you choose.'
   }
 };
 

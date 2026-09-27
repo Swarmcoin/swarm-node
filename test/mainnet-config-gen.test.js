@@ -173,6 +173,27 @@ test('the payout address written for the miner is the one that was validated', (
   assert.match(none, /^internal_miner = false$/m);
 });
 
+// The generator does not read the payout address to decide this: whichever
+// address the node validated, the miner inside the node is the one that runs
+// on this many threads. The address in MAIN_OPTS is therefore the fixture's
+// own, and no address is invented here.
+test('on mainnet the miner inside the node is given the cores the user chose', () => {
+  const mining = { ...MAIN_OPTS, internalMiner: true, internalMinerThreads: 14 };
+  const toml = generateZebraConfig(MAINNET, mining);
+  assert.match(toml, /^internal_miner = true$/m);
+  assert.match(toml, /^internal_miner_threads = 14$/m);
+
+  // A seed or RPC node that is not mining carries neither.
+  const idle = generateZebraConfig(MAINNET, MAIN_OPTS);
+  assert.doesNotMatch(idle, /internal_miner_threads/);
+
+  // Nonsense is refused here, where the message is readable.
+  assert.throws(
+    () => generateZebraConfig(MAINNET, { ...mining, internalMinerThreads: 999 }),
+    /thread count 1\.\.256/
+  );
+});
+
 // --------------------------------------------------------- what it refuses
 
 test('a mainnet definition with no genesis hash produces no configuration', () => {

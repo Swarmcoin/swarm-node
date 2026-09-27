@@ -235,8 +235,11 @@ function parseMinedLine(line) {
  *
  * Both miners run the same Equihash solver and, since the rate work of
  * 2026-09-22, both report it in the same shape:
- *   ... internal miner rate: 1234 sol/s (attempts 123456 in 10.0s)
+ *   ... internal miner rate: 1234 sol/s (attempts 123456 in 10.0s across 14 threads)
  *   Mining rate 1234 sol/s (attempts 123456 in 10.0s)
+ *
+ * The node reports one number for the whole machine, however many solver
+ * threads it is running, so both shapes are still a single rate.
  *
  * The number counted is how often the solver asked for its next nonce, so one
  * unit is one real Equihash attempt. Nothing here estimates a rate from blocks

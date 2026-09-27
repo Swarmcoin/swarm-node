@@ -25,7 +25,7 @@ test('a unified address is recognised and selects shielded mining', () => {
   assert.strictEqual(r.looksValid, true);
   assert.strictEqual(r.kind, 'unified');
   assert.strictEqual(r.mode, 'shielded');
-  assert.match(r.detail, /one core/);
+  assert.match(r.detail, /as many processor cores as you choose/);
 });
 
 test('whitespace around a paste is tolerated', () => {

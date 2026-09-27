@@ -233,7 +233,7 @@ export function MiningView({ s, api }) {
             className={m.mode === 'shielded' ? 'on' : ''}
             disabled={s.payout.kind !== 'unified'}
             onClick={() => api.setMiningMode('shielded')}
-          >Shielded · 1 core</button>
+          >Shielded · many cores</button>
         </div>
 
         {/* A greyed-out choice with no explanation is the same dead end as a
@@ -270,14 +270,15 @@ export function MiningView({ s, api }) {
         {m.mode === 'shielded' ? (
           <div style={{ marginTop: 12 }}>
             <Notice kind="info">
-              Shielded mining runs inside the node itself, on one core, and pays into your unified
-              address where nobody can see the amount. Switching it on or off restarts the node,
-              because that is the only time the node reads the setting.
+              Shielded mining runs inside the node itself, because only the node can build a
+              block that pays a unified address where nobody can see the amount. It uses the
+              cores you choose below. Switching it on or off restarts the node, because that
+              is the only time the node reads the setting.
             </Notice>
           </div>
         ) : null}
 
-        {m.mode === 'standard' && m.standardAvailable ? (
+        {m.mode === 'shielded' || (m.mode === 'standard' && m.standardAvailable) ? (
           <div style={{ marginTop: 18 }}>
             <label className="field">
               <span>How many cores to use — {m.intensity} of {m.maxWorkers} available</span>
@@ -444,7 +445,9 @@ export function NodeView({ s, api, cfg }) {
                 <td className="muted">Miner processes</td>
                 <td className="num">
                   {s.mining.mode === 'shielded'
-                    ? (s.mining.on ? 'inside the node (one thread)' : 'none')
+                    ? (s.mining.on
+                        ? `inside the node (${s.mining.intensity} ${s.mining.intensity === 1 ? 'thread' : 'threads'})`
+                        : 'none')
                     : (s.mining.pids && s.mining.pids.length
                         ? s.mining.pids.map((p) => `PID ${p}`).join(', ')
                         : 'none')}

@@ -218,9 +218,13 @@ class ChainEngine extends EventEmitter {
       enforceHealthGate: !first && this.settings.zebraHealthGate !== false,
       cpuThreads: Math.max(1, Math.min(8, Number(this.settings.nodeThreads) || 2)),
       // The node must carry the payout the standard miner will ask for, and
-      // Zebra's internal miner reads its payout from here too.
+      // the node's own miner reads its payout from here too.
       minerAddress: this.address.value || null,
-      internalMiner: this.wantInternalMiner === true
+      internalMiner: this.wantInternalMiner === true,
+      // The shielded engine gets the same slice of the machine the user chose
+      // for the standard one. Before this it always got one core, so a fifteen
+      // core machine paying a swm1 address contributed one core's work.
+      internalMinerThreads: this.wantInternalMiner === true ? this.effectiveWorkerCount() : null
     };
   }
 
@@ -581,7 +585,8 @@ class ChainEngine extends EventEmitter {
       this.mining.on = true;
       this.mining.startedAt = Date.now();
       this.mining.pausedByGate = false;
-      this.log('shielded mining on: one solver thread inside the node, paying your unified address');
+      const threads = this.effectiveWorkerCount();
+      this.log(`shielded mining on: ${threads} solver ${threads === 1 ? 'thread' : 'threads'} inside the node, paying your unified address`);
       return { ok: true, mode: 'shielded', restarted: true };
     }
 
@@ -1352,14 +1357,15 @@ class ChainEngine extends EventEmitter {
 
     // Pre-select the engine the address can actually use, rather than leaving
     // "Standard - many cores" selected next to a shielded-only address. A
-    // transparent address drives the multi-core miner; a unified one drives
-    // the node's own single-thread miner. There is no third option.
+    // transparent address drives the standalone miner; a unified one drives the
+    // node's own miner, which the app now gives the same number of cores.
+    // There is no third option.
     const fits = Array.isArray(result.modes) && result.modes.length ? result.modes[0] : null;
     if (fits && fits !== this.mining.mode && !this.mining.on) {
       this.mining.mode = fits;
       this.settings.miningMode = fits;
       this.log(fits === 'shielded'
-        ? 'that is a unified address, so shielded mining (one core) is selected'
+        ? 'that is a unified address, so shielded mining (many cores) is selected'
         : 'that is a transparent address, so standard mining (many cores) is selected');
     }
 
@@ -1390,9 +1396,17 @@ class ChainEngine extends EventEmitter {
   async setIntensity(n) {
     const max = Math.max(1, (require('os').cpus().length || 2) - 1);
     const v = Math.max(1, Math.min(max, Math.round(Number(n) || 1)));
+    const was = this.settings.intensity;
     this.settings.intensity = v;
     this.saveSettings(this.settings);
     if (this.pool && this.pool.running) await this.pool.setCount(v);
+    // The node reads its thread count only when it starts, so a shielded miner
+    // that is already running keeps the count it started with. Say so rather
+    // than letting the slider claim a change it did not make.
+    if (this.mining.on && this.mining.mode === 'shielded' && v !== was) {
+      this.log(`shielded mining will use ${v} ${v === 1 ? 'core' : 'cores'} the next time the node starts`);
+      return { ok: true, intensity: v, max, appliesAfterRestart: true };
+    }
     return { ok: true, intensity: v, max };
   }
 

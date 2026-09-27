@@ -214,7 +214,8 @@ never turn into this one behind your back. The two can sit side by side.
      which uses as many processor cores as you choose. Rewards paid to it are
      visible on the explorer.
    * An address starting `utest…` is unified. It allows **Shielded** mining,
-     which uses one core inside the node and pays you privately.
+     which runs inside the node — the only place a private reward can be built —
+     and uses as many processor cores as you choose, just like Standard.
 3. **Let the machine check run.** Processor, memory, free disk space and whether
    the network port is free. All of it measured on your computer and none of it
    sent anywhere.
@@ -270,12 +271,9 @@ blocks and tells you to check your wallet for the balance.
   launch until you right-click and choose Open. See above.
 * No automatic updates. New versions are downloaded and installed by hand, on
   purpose, for this testnet.
-* Shielded mining uses exactly one core. That is a limitation of the node's
-  built-in miner, which has no thread setting; Standard mining is the one that
-  scales across cores.
-* Shielded mining reports no hash rate, so the app shows "—" rather than a
-  number it made up. The same goes for the network hash rate until the chain has
-  enough blocks to measure one.
+* The network hash rate shows "—" until the chain has enough blocks to measure
+  one. The app never shows a number it made up: your own rate appears only once
+  a miner has measured and reported it, whichever engine you are running.
 * The app shows no temperature, no power draw and no graphics-card figures,
   because it has no reliable way to read them on every machine.
 

@@ -69,6 +69,15 @@ function requirePort(value, what) {
   return n;
 }
 
+// The internal miner's solver-thread count. Zebra caps it at the machine's own
+// core count, so this only refuses the values that are not a thread count at
+// all; 256 is the node's own ceiling (the solver id is a u8).
+function requireSolverThreads(value, what) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 256) throw new ConfigError(`${what} must be a thread count 1..256, got ${value}`);
+  return n;
+}
+
 function requireHex(value, bytes, what) {
   if (typeof value !== 'string' || !new RegExp(`^[0-9a-fA-F]{${bytes * 2}}$`).test(value)) {
     throw new ConfigError(`${what} must be ${bytes * 2} hex characters`);
@@ -148,7 +157,12 @@ function commonOptions(manifest, opts, profile) {
   if (minerAddress && !/^[0-9A-Za-z]{30,600}$/.test(minerAddress)) {
     throw new ConfigError('minerAddress has an implausible shape; it is validated by the node, not parsed here');
   }
-  return { dataDir, p2pPort, rpcPort, p2pListen, cpuThreads, internalMiner, minerAddress };
+  // How much of this machine the node's own miner spends on solving. Null means
+  // "do not write the setting", which is Zebra's one-thread default.
+  const internalMinerThreads = opts.internalMinerThreads == null
+    ? null
+    : requireSolverThreads(opts.internalMinerThreads, 'internalMinerThreads');
+  return { dataDir, p2pPort, rpcPort, p2pListen, cpuThreads, internalMiner, minerAddress, internalMinerThreads };
 }
 
 /**
@@ -167,7 +181,8 @@ function commonOptions(manifest, opts, profile) {
  */
 function generateSwarmMainConfig(manifest, opts, profile) {
   const genesisHash = requireHex((manifest.genesis || {}).hash || '', 32, 'genesis.hash');
-  const { dataDir, p2pPort, rpcPort, p2pListen, cpuThreads, internalMiner, minerAddress } = commonOptions(manifest, opts, profile);
+  const { dataDir, p2pPort, rpcPort, p2pListen, cpuThreads, internalMiner, minerAddress, internalMinerThreads } =
+    commonOptions(manifest, opts, profile);
 
   // The three destinations, by SWARM slot. The mapping from a manifest's
   // recorded receiver to the slot is fixed in network-profile.js, so a
@@ -272,6 +287,10 @@ function generateSwarmMainConfig(manifest, opts, profile) {
     L.push('# miner_address is written only after the node has validated a payout address.');
   }
   L.push(`internal_miner = ${internalMiner}`);
+  // Only a mining node carries a thread count. A node that is not mining writes
+  // no such line, so a seed or RPC server keeps the node's one-thread default and
+  // its stored configuration is unchanged by this setting existing.
+  if (internalMiner && internalMinerThreads) L.push(`internal_miner_threads = ${internalMinerThreads}`);
   L.push('');
 
   L.push('[tracing]');
@@ -303,7 +322,9 @@ function assertNotUpstream(text) {
  *   p2pListen         {string} "host:port" to listen on, defaults to 0.0.0.0:<manifest p2p port>
  *   rpcPort           {number} loopback RPC port, defaults to the manifest rpc port
  *   minerAddress      {string|null} payout address, or null for "do not mine"
- *   internalMiner     {boolean} run Zebra's own one-thread shielded miner
+ *   internalMiner     {boolean} run the node's own shielded miner
+ *   internalMinerThreads {number|null} solver threads for that miner; null means
+ *                     leave the setting out, which the node reads as one thread
  *   seedPeers         {string[]} override for the manifest seed list (first-node mode passes [])
  *   enforceHealthGate {boolean} ask Zebra itself to refuse "synced" without peers / fresh tip
  *   metricsPort       {number|null} optional Prometheus endpoint, loopback only
@@ -378,6 +399,9 @@ function generateZebraConfig(manifest, opts = {}) {
   if (minerAddress && !/^[0-9A-Za-z]{30,600}$/.test(minerAddress)) {
     throw new ConfigError('minerAddress has an implausible shape; it is validated by the node, not parsed here');
   }
+  const internalMinerThreads = opts.internalMinerThreads == null
+    ? null
+    : requireSolverThreads(opts.internalMinerThreads, 'internalMinerThreads');
 
   const L = [];
   L.push(`# ${id.network_name} -- SWARM Node local profile.`);
@@ -487,6 +511,10 @@ function generateZebraConfig(manifest, opts = {}) {
     L.push('# miner_address is written only after the node has validated a payout address.');
   }
   L.push(`internal_miner = ${internalMiner}`);
+  // Only a mining node carries a thread count. A node that is not mining writes
+  // no such line, so a seed or RPC server keeps the node's one-thread default and
+  // its stored configuration is unchanged by this setting existing.
+  if (internalMiner && internalMinerThreads) L.push(`internal_miner_threads = ${internalMinerThreads}`);
   L.push('');
 
   L.push('[tracing]');

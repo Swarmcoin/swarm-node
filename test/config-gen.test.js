@@ -140,6 +140,25 @@ test('writes the miner address and internal_miner exactly as asked', () => {
   assert.match(off, /internal_miner = false/);
 });
 
+test('the shielded miner is given the cores the user chose', () => {
+  const unified = 'utest10a8k6aw5w33kvyt7x6fryzu7vvsjru5vgcfnvr288qx2zm6p63ygcajtaze0px08t583dyrgr42vasazjhhnntus2tqrpkzu0dm2l4cgf3ld6wdqdrf3jv8mvfx9c80e73syer9l2wlgawjtf7yvj0eqwdf354trtelxnr0fhpw9792eaf49ghstkyftc9lwqqwy4ye0cleagp4nzyt';
+  const many = generateZebraConfig(baseManifest(), {
+    ...OPTS, internalMiner: true, minerAddress: unified, internalMinerThreads: 14
+  });
+  assert.match(many, /^internal_miner_threads = 14$/m);
+
+  // A node that is not mining carries no thread count at all, so the node's
+  // own one-thread default is what a relay or seed keeps.
+  const idle = generateZebraConfig(baseManifest(), OPTS);
+  assert.doesNotMatch(idle, /internal_miner_threads/);
+
+  // Nonsense is refused where the message is readable, not in the node's log.
+  assert.throws(
+    () => generateZebraConfig(baseManifest(), { ...OPTS, internalMiner: true, minerAddress: unified, internalMinerThreads: 0 }),
+    /thread count 1\.\.256/
+  );
+});
+
 test('the first-node case can drop the seed list and switch Zebra\u2019s own health gate off', () => {
   const first = generateZebraConfig(baseManifest(), { ...OPTS, seedPeers: [], enforceHealthGate: false });
   assert.match(first, /initial_testnet_peers = \[\]/);

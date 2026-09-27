@@ -97,7 +97,7 @@ function nextAction(state) {
   // fail on click, so the primary switches to the thing that can be fixed.
   if (m.mode === 'standard' && m.standardAvailable === false) {
     return act('fix-binary', 'Use the node’s own miner instead', 'primary',
-      'The multi-core miner is not available in this build, but the node can mine on one core.');
+      'The separate miner is not available in this build, but the node can mine on its own, across your cores.');
   }
 
   // The gate is open.

@@ -65,7 +65,7 @@ const MESSAGES = {
 // node itself (see chain/address.js — this app never parses an address).
 const MODE_REQUIRES = {
   standard: 'transparent', // N copies of privacy-miner.exe, transparent tm…/t2… payout
-  shielded: 'unified'      // Zebra's internal one-thread miner, utest… payout
+  shielded: 'unified'      // the node's own miner, across the chosen cores, utest… payout
 };
 
 // Reasons that are about network health rather than about the user's setup.
