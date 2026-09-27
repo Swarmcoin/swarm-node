@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Pill, Metric, Notice, Switch, fmtCoins, fmtBytes, fmtDuration, fmtAge, fmtSolps, shortHash } from './ui.jsx';
 import { CodeLockSettings } from './lock.jsx';
 import { rewardStatus } from './reward-status.mjs';
+import { channelRows } from './channel-links.mjs';
 
 // ---------------------------------------------------------------- mining
 export function MiningView({ s, api }) {
@@ -907,13 +908,15 @@ export function SettingsView({ s, cfg, api }) {
         </p>
         <table className="tbl" style={{ marginTop: 6 }}>
           <tbody>
-            {LINK_LABELS.filter(([k]) => cfg.links && cfg.links[k]).map(([k, label]) => (
-              <tr key={k}>
-                <td className="muted">{label}</td>
+            {/* The explorer row names the running network ("Explorer · mainnet")
+                and shows the host it opens, which follows that network too. */}
+            {channelRows(cfg.links, cfg.networkProfile).map((r) => (
+              <tr key={r.key}>
+                <td className="muted">{r.label}</td>
                 <td style={{ textAlign: 'right' }}>
-                  <button className="btn sm ghost" onClick={() => window.shell.openLink(cfg.links[k])}>
+                  <button className="btn sm ghost" onClick={() => window.shell.openLink(r.url)}>
                     <span className="row" style={{ gap: 6 }}>
-                      <span className="mono">{cfg.links[k].replace(/^https:\/\//, '')}</span>
+                      <span className="mono">{r.host}</span>
                       <Icon name="external" size={13} />
                     </span>
                   </button>
@@ -944,13 +947,9 @@ export function SettingsView({ s, cfg, api }) {
   );
 }
 
-// Only these links exist, and the main process enforces the same allow-list.
-const LINK_LABELS = [
-  ['website', 'Website'],
-  ['explorer', 'Explorer'],
-  ['x', 'X'],
-  ['source', 'Source code']
-];
+// The official links and their labels live in ./channel-links.mjs, where the
+// explorer row gets the network word; the main process enforces the same
+// allow-list.
 
 // ---------------------------------------------------------------- log
 // Who said it, in words the user can act on. The engine tags every entry

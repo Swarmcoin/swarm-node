@@ -7,7 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { validate, DEFAULT_STATUS_URL, ALLOWED_STATUS_URLS } = require('../electron/chain/network-status');
+const { validate, statusUrlFor, ALLOWED_STATUS_URLS } = require('../electron/chain/network-status');
 
 const EXPECT = {
   genesisHash: '045993f5c91ea160c7ebda573dd97b0016816bca68d395bfff202779b88e2a28',
@@ -33,7 +33,6 @@ test('the URLs are fixed, one seed status file per SWARM network', () => {
   // SWARM mainnet build asked the testnet server how tall the main chain was,
   // refused the answer it got (rightly: another network's genesis) and showed
   // no network figures at all.
-  assert.equal(DEFAULT_STATUS_URL, 'https://lwd.swarm.green/status.json');
   assert.deepEqual(ALLOWED_STATUS_URLS, [
     'https://lwd.swarm.green/status.json',
     'https://lwd-main.swarm.green/status.json'
@@ -51,9 +50,46 @@ test('a NetworkStatus takes the URL of its own profile, and nothing else', () =>
   const { NetworkStatus } = require('../electron/chain/network-status');
   assert.equal(new NetworkStatus({ statusUrl: 'https://lwd-main.swarm.green/status.json' }).url,
     'https://lwd-main.swarm.green/status.json');
-  // Anything outside the allow-list falls back; it is never fetched.
-  assert.equal(new NetworkStatus({ statusUrl: 'https://example.invalid/status.json' }).url, DEFAULT_STATUS_URL);
-  assert.equal(new NetworkStatus({}).url, DEFAULT_STATUS_URL);
+  // Anything outside the allow-list is never fetched. There is no fixed
+  // fallback any more: it used to be the TESTNET feed whatever was running.
+  assert.equal(new NetworkStatus({ statusUrl: 'https://example.invalid/status.json' }).url, null);
+  assert.equal(new NetworkStatus({}).url, null);
+});
+
+test('the fallback follows the running network: a mainnet node never reads the testnet feed', () => {
+  const { NetworkStatus } = require('../electron/chain/network-status');
+  const MAIN = 'https://lwd-main.swarm.green/status.json';
+  const TEST = 'https://lwd.swarm.green/status.json';
+  // No URL, or one outside the allow-list: the chain label decides.
+  assert.equal(statusUrlFor({ chainLabel: 'swarm-mainnet' }), MAIN);
+  assert.equal(statusUrlFor({ chainLabel: 'swarm-testnet' }), TEST);
+  assert.equal(statusUrlFor({ statusUrl: 'https://example.invalid/status.json', chainLabel: 'swarm-mainnet' }), MAIN);
+  // The OTHER network's feed is refused even though it is allow-listed.
+  assert.equal(statusUrlFor({ statusUrl: TEST, chainLabel: 'swarm-mainnet' }), MAIN);
+  assert.equal(statusUrlFor({ statusUrl: MAIN, chainLabel: 'swarm-testnet' }), TEST);
+  // Exactly what main.js passes, for each network the app knows.
+  const NP = require('../electron/chain/network-profile');
+  for (const [file, want] of [['network-mainnet.json', MAIN], ['network.json', TEST]]) {
+    const m = require(`../electron/net/${file}`);
+    const p = NP.profileForManifest(m);
+    const ns = new NetworkStatus({
+      genesisHash: m.genesis.hash,
+      chainLabel: m.identity.light_wallet_chain_label,
+      statusUrl: NP.lightWalletUrls(p).statusUrl
+    });
+    assert.equal(ns.url, want, file);
+  }
+  // A chain label that names no SWARM network, and no URL: nothing at all.
+  assert.equal(statusUrlFor({ chainLabel: 'swarm-node-dev' }), null);
+});
+
+test('with no status URL nothing is fetched and the reason is given', async () => {
+  const { NetworkStatus } = require('../electron/chain/network-status');
+  const r = await new NetworkStatus({}).get({ force: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.data, null);
+  assert.equal(r.source, null);
+  assert.match(r.error, /names no SWARM network status file/);
 });
 
 test('the live payload is accepted and its real numbers survive', () => {

@@ -93,7 +93,12 @@ const PROFILES = [
     // mainnet build asked the TESTNET server how tall the SWARM main chain
     // was, got nothing it could use, and could not tell a synced node from a
     // node still catching up.
-    lightWalletHost: 'lwd.swarm.green'
+    lightWalletHost: 'lwd.swarm.green',
+    // The block explorer FOR THIS NETWORK, by its explicit name. The bare
+    // explore.swarm.green is not used: it was created for the testnet before
+    // the mainnet existed, and a mainnet build linked it as "the" explorer.
+    // See specs/NETWORKS.md in the project repository.
+    explorerHost: 'testnet.explore.swarm.green'
   },
   {
     id: 'swarm-mainnet',
@@ -122,7 +127,8 @@ const PROFILES = [
     unifiedPrefixes: ['swm1'],
     fundingAddressPrefix: 's3',
     coinsHaveValue: true,
-    lightWalletHost: 'lwd-main.swarm.green'
+    lightWalletHost: 'lwd-main.swarm.green',
+    explorerHost: 'mainnet.explore.swarm.green'
   }
 ];
 
@@ -260,6 +266,20 @@ function lightWalletUrls(profile) {
     // mainnet file and never read.
     liveMapUrl: `https://${p.lightWalletHost}/swarm-map-live.json`
   };
+}
+
+/**
+ * The block explorer of this network, as the one https address the app opens
+ * for it.
+ *
+ * It must follow the network like the light-wallet host does. Both embedded
+ * definitions named the bare explore.swarm.green, which serves the TESTNET, so
+ * a SWARM mainnet build sent people looking for their mainnet rewards to the
+ * testnet explorer, under a label that did not say which network it was.
+ */
+function explorerUrl(profile) {
+  const p = requireProfile(profile.id || profile);
+  return `https://${p.explorerHost}`;
 }
 
 /** How to describe this network's payout addresses in one phrase. */
@@ -622,6 +642,7 @@ module.exports = {
   classifyPrefix,
   addressHint,
   lightWalletUrls,
+  explorerUrl,
   checkNodeChain,
   checkNodeGenesis,
   loadProfileManifest,

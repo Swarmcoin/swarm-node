@@ -31,7 +31,11 @@ const NP = require('./network-profile');
 // chain; the answer was refused (rightly - its genesis is another network's)
 // and the app showed no network figures at all. The caller passes the URL its
 // profile publishes; see NP.lightWalletUrls.
-const DEFAULT_STATUS_URL = 'https://lwd.swarm.green/status.json';
+//
+// There is no fixed fallback any more. A URL the caller did not pass, or one
+// outside the allow-list, used to become the TESTNET feed whatever network was
+// running. It now comes from the chain label of the running network, and when
+// that names no SWARM network nothing is fetched at all: see statusUrlFor.
 const MAX_BYTES = 64 * 1024;
 const TIMEOUT_MS = 10000;
 const MIN_REFRESH_MS = 30 * 1000;   // the file itself regenerates every 30s
@@ -90,6 +94,26 @@ const ALLOWED_STATUS_URLS = Object.freeze(
   NP.PROFILES.map((p) => NP.lightWalletUrls(p).statusUrl)
 );
 
+/**
+ * The status file this network publishes, or null.
+ *
+ * The chain label comes from the embedded definition of the running network,
+ * so it decides: a URL that belongs to the OTHER network is never used, and a
+ * mainnet node cannot be pointed at the testnet feed by a missing or stale
+ * argument. Without a chain label, only an allow-listed URL is accepted.
+ *
+ * @param {object} expect {statusUrl, chainLabel}
+ * @returns {string|null}
+ */
+function statusUrlFor(expect = {}) {
+  const own = NP.PROFILES.find((p) => p.chainLabel === expect.chainLabel) || null;
+  const ownUrl = own ? NP.lightWalletUrls(own).statusUrl : null;
+  if (ALLOWED_STATUS_URLS.includes(expect.statusUrl) && (!ownUrl || expect.statusUrl === ownUrl)) {
+    return expect.statusUrl;
+  }
+  return ownUrl;
+}
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     if (!ALLOWED_STATUS_URLS.includes(url)) {
@@ -127,7 +151,9 @@ class NetworkStatus {
    */
   constructor(expect = {}) {
     this.expect = expect;
-    this.url = ALLOWED_STATUS_URLS.includes(expect.statusUrl) ? expect.statusUrl : DEFAULT_STATUS_URL;
+    // null when neither the URL nor the chain label names a SWARM network;
+    // get() then reports that instead of fetching anything.
+    this.url = statusUrlFor(expect);
     this.value = null;        // last accepted payload
     this.fetchedAt = 0;
     this.error = null;
@@ -137,6 +163,12 @@ class NetworkStatus {
   /** @param {boolean} force ignore the refresh interval */
   async get({ force = false } = {}) {
     const now = Date.now();
+    if (!this.url) {
+      return {
+        ok: false, data: null, fetchedAt: null, ageMs: null, stale: false,
+        error: 'this build names no SWARM network status file', source: null
+      };
+    }
     if ((force || now - this.fetchedAt > MIN_REFRESH_MS) && !this.inFlight) {
       this.inFlight = fetchJson(this.url)
         .then((raw) => {
@@ -165,4 +197,4 @@ class NetworkStatus {
   }
 }
 
-module.exports = { NetworkStatus, validate, DEFAULT_STATUS_URL, ALLOWED_STATUS_URLS, STALE_AFTER_MS };
+module.exports = { NetworkStatus, validate, statusUrlFor, ALLOWED_STATUS_URLS, STALE_AFTER_MS };

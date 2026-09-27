@@ -94,7 +94,10 @@ const out = {
   // else invented here.
   links: {
     website: 'https://swarm.green',
-    explorer: 'https://explore.swarm.green',
+    // PER NETWORK, like tip_oracle_url above. This was the bare
+    // explore.swarm.green whatever was being embedded, and that name serves
+    // the TESTNET explorer: a mainnet build linked it as "Explorer".
+    explorer: NP.explorerUrl(profile),
     swarm_map: 'https://swarm.green/#map',
     x: 'https://x.com/swarm_coin',
     source: 'https://github.com/Swarm-Official'

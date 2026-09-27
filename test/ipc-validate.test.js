@@ -79,7 +79,7 @@ test('a data folder must be absolute, local, and outside the Windows directories
 });
 
 test('only the app\u2019s own https links can be opened in the browser', () => {
-  const hosts = ['swarm.green', 'explore.swarm.green', 'github.com'];
+  const hosts = ['swarm.green', 'mainnet.explore.swarm.green', 'github.com'];
   assert.strictEqual(V.externalUrl('https://swarm.green/', hosts), 'https://swarm.green/');
   assert.throws(() => V.externalUrl('http://swarm.green/', hosts), /Only https/);
   assert.throws(() => V.externalUrl('file:///C:/Windows/System32/cmd.exe', hosts), /Only https/);
