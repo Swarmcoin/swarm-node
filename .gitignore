@@ -3,6 +3,7 @@ dist/
 release/
 release-mac-signed/
 release-mac-signed-x64/
+release-mac-signed-universal/
 staging/
 resources/bin/
 *.log

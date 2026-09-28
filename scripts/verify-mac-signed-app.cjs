@@ -15,23 +15,30 @@ module.exports = async function verifyMacSignedApp(context) {
   const buildProfile = JSON.parse(asar.extractFile(archive, "electron/net/build-profile.json").toString());
   if (buildProfile.profile !== "swarm-mainnet") throw new Error("The packaged Mac app is not a mainnet build");
   const arch = Arch[context.arch];
-  if (!["arm64", "x64"].includes(arch)) throw new Error(`Unexpected macOS architecture: ${arch}`);
-  const expected = manifest.platforms?.[`darwin-${arch}`];
-  if (!expected?.zebrad || !expected?.miner) throw new Error(`No signed ${arch} binary hashes in app.asar`);
-  if (expected.zebrad.network !== "SwarmMainnet" || expected.miner.network !== "SwarmMainnet") {
-    throw new Error("The packaged Mac binaries are not the pinned mainnet build");
-  }
-  for (const kind of ["zebrad", "miner"]) {
-    const entry = expected[kind];
-    const file = path.join(app, "Contents/Resources/bin", entry.file);
-    const hash = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-    if (hash !== entry.sha256) throw new Error(`${kind} changed after its hash was sealed in app.asar`);
-    execFileSync("codesign", ["--verify", "--strict", "--verbose=2", file], { stdio: "inherit" });
-    const display = spawnSync("codesign", ["-dv", "--verbose=4", file], { encoding: "utf8" });
-    if (display.status !== 0) throw new Error(`Cannot inspect ${kind} signature: ${display.stderr}`);
-    const details = display.stderr;
-    if (!/Authority=Developer ID Application:/.test(details)) throw new Error(`${kind} lacks a Developer ID Application signature`);
-    console.log(`${kind}: signed-byte SHA256 ${hash} matches app.asar`);
+  if (!["arm64", "x64", "universal"].includes(arch)) throw new Error(`Unexpected macOS architecture: ${arch}`);
+  for (const buildArch of arch === "universal" ? ["arm64", "x64"] : [arch]) {
+    const expected = manifest.platforms?.[`darwin-${buildArch}`];
+    if (!expected?.zebrad || !expected?.miner) throw new Error(`No signed ${buildArch} binary hashes in app.asar`);
+    if (expected.zebrad.network !== "SwarmMainnet" || expected.miner.network !== "SwarmMainnet") {
+      throw new Error("The packaged Mac binaries are not the pinned mainnet build");
+    }
+    for (const kind of ["zebrad", "miner"]) {
+      const entry = expected[kind];
+      const file = path.join(app, "Contents/Resources/bin", entry.file);
+      const hash = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+      if (hash !== entry.sha256) throw new Error(`${kind} changed after its hash was sealed in app.asar`);
+      const slices = execFileSync("lipo", ["-archs", file], { encoding: "utf8" }).trim().split(/\s+/);
+      if (!slices.includes(buildArch === "x64" ? "x86_64" : "arm64")) {
+        throw new Error(`${kind} has no ${buildArch} slice`);
+      }
+      execFileSync("codesign", ["--verify", "--strict", "--verbose=2", file], { stdio: "inherit" });
+      const display = spawnSync("codesign", ["-dv", "--verbose=4", file], { encoding: "utf8" });
+      if (display.status !== 0) throw new Error(`Cannot inspect ${kind} signature: ${display.stderr}`);
+      if (!/Authority=Developer ID Application:/.test(display.stderr)) {
+        throw new Error(`${kind} lacks a Developer ID Application signature`);
+      }
+      console.log(`${kind}: ${buildArch} slice, signed-byte SHA256 ${hash} matches app.asar`);
+    }
   }
   execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app], { stdio: "inherit" });
   const outer = spawnSync("codesign", ["-dv", "--verbose=4", app], { encoding: "utf8" });

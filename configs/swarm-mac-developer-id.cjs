@@ -5,11 +5,11 @@
 const { developerIdIdentity } = require("../scripts/mac-distribution-identity.cjs");
 const base = require("../package.json").build;
 const arch = process.env.SWARM_MAC_ARCH || "arm64";
-if (!["arm64", "x64"].includes(arch)) throw new Error(`Unsupported SWARM_MAC_ARCH: ${arch}`);
+if (!["arm64", "x64", "universal"].includes(arch)) throw new Error(`Unsupported SWARM_MAC_ARCH: ${arch}`);
 
 module.exports = {
   ...base,
-  directories: { ...base.directories, output: arch === "x64" ? "release-mac-signed-x64" : "release-mac-signed" },
+  directories: { ...base.directories, output: arch === "universal" ? "release-mac-signed-universal" : arch === "x64" ? "release-mac-signed-x64" : "release-mac-signed" },
   afterSign: "./scripts/verify-mac-signed-app.cjs",
   mac: {
     ...base.mac,
@@ -24,6 +24,9 @@ module.exports = {
     // These executables are signed before packaging, then their exact signed
     // bytes are hashed into app.asar. Re-signing would invalidate that hash.
     signIgnore: ["/Contents/Resources/bin/swarm-(?:node-daemon|miner)$"],
+    // Both inputs contain the same already-merged and signed native binaries.
+    // Keep them intact when electron-builder combines its two Electron apps.
+    x64ArchFiles: "**/bin/swarm-*",
     // electron-builder notarizes and staples the app before building the DMG.
     // The distribution script separately notarizes and staples the final DMG.
     notarize: true,

@@ -1,6 +1,7 @@
 # macOS direct-download build
 
-This path signs and notarizes `0.2.0-mainnet.5` for Apple silicon and Intel.
+This path signs and notarizes `0.2.0-mainnet.5` for Apple silicon and Intel,
+including a single universal app that runs natively on both.
 It fetches the reviewed mainnet daemon and miner from
 `vendored-binaries-mainnet-2`, verifies their hashes against
 `build/binary-pins.json`, and does not touch node settings or chain data.
@@ -29,6 +30,14 @@ For Intel, use the same clean source checkout and pass `--arch x64`:
 APPLE_KEYCHAIN_PROFILE=SWARM-notary node scripts/build-mac-distribution.mjs --arch x64
 ```
 
+For one universal DMG and ZIP, use `--arch universal` instead. This fetches
+both pinned native programs, combines each architecture with `lipo`, signs the
+combined programs, and lets electron-builder combine the two Electron apps:
+
+```sh
+APPLE_KEYCHAIN_PROFILE=SWARM-notary node scripts/build-mac-distribution.mjs --arch universal
+```
+
 The build script verifies the original assets against the reviewed SHA256
 pins, signs staged copies with hardened runtime, and records both the original
 and final signed-byte hashes in `electron/net/binaries.json`. It builds the UI,
@@ -37,7 +46,9 @@ still match the hashes inside `app.asar`. It notarizes and staples the app and
 the final DMG, then recreates the ZIP from the stapled app. Its output is
 `release-mac-signed/out/` with a DMG, ZIP, `SHA256SUMS` and a release manifest.
 Intel output is written to `release-mac-signed-x64/out/`. The separate output
-directory is deliberately refused if it already exists. When building both
+directory is deliberately refused if it already exists. Universal output is
+written to `release-mac-signed-universal/out/` and records both Mac binary
+baselines inside the app. When building both
 architectures in one checkout, restore the generated `electron/net/binaries.json`
 and `electron/net/build-profile.json` to the reviewed commit between builds.
 

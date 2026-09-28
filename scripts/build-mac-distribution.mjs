@@ -13,12 +13,12 @@ const { developerIdIdentity } = require('./mac-distribution-identity.cjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const archIndex = process.argv.indexOf('--arch');
 const arch = archIndex < 0 ? 'arm64' : process.argv[archIndex + 1];
-if (!['arm64', 'x64'].includes(arch)) throw new Error(`Unsupported Mac architecture: ${arch}`);
-const output = path.join(root, arch === 'x64' ? 'release-mac-signed-x64' : 'release-mac-signed');
+if (!['arm64', 'x64', 'universal'].includes(arch)) throw new Error(`Unsupported Mac architecture: ${arch}`);
+const output = path.join(root, arch === 'universal' ? 'release-mac-signed-universal' : arch === 'x64' ? 'release-mac-signed-x64' : 'release-mac-signed');
 const profile = process.env.APPLE_KEYCHAIN_PROFILE;
 const resume = process.argv.includes('--resume');
 const version = require('../package.json').version;
-const app = path.join(output, arch === 'x64' ? 'mac' : 'mac-arm64', 'SWARM Node.app');
+const app = path.join(output, arch === 'universal' ? 'mac-universal' : arch === 'x64' ? 'mac' : 'mac-arm64', 'SWARM Node.app');
 const dmName = `SWARM-Node-${version}-mac-${arch}.dmg`;
 const zipName = `SWARM-Node-${version}-mac-${arch}.zip`;
 const dmg = path.join(output, dmName);
@@ -63,38 +63,45 @@ if (resume) {
 }
 
 if (!resume) {
-const pins = require('../build/binary-pins.json').profiles['swarm-mainnet'].platforms[`darwin-${arch}`];
-if (!version.includes('-mainnet.') || !pins) throw new Error('A pinned mainnet Mac build is required');
-const verified = path.join(root, 'staging', 'verified-bin');
-run('node', ['scripts/fetch-pinned-binaries.mjs', '--platform', `darwin-${arch}`,
-  '--profile', 'swarm-mainnet', '--dest', verified, '--staging', 'staging/download']);
-const assets = [
-  ['zebrad', 'swarm-node-daemon', pins.node_sha],
-  ['privacy-miner', 'swarm-miner', pins.miner_sha],
-];
+if (!version.includes('-mainnet.')) throw new Error('A pinned mainnet Mac build is required');
+const arches = arch === 'universal' ? ['arm64', 'x64'] : [arch];
+const pinsByArch = require('../build/binary-pins.json').profiles['swarm-mainnet'].platforms;
 const binDir = path.join(root, 'resources/bin');
 fs.rmSync(binDir, { recursive: true, force: true });
-fs.mkdirSync(binDir, { recursive: true });
-for (const [source, dest, expected] of assets) {
-  const raw = path.join(verified, source);
-  if (sha(raw) !== expected) throw new Error(`${source} differs from the reviewed SHA256`);
-  const staged = path.join(binDir, dest);
-  fs.copyFileSync(raw, staged);
-  fs.chmodSync(staged, 0o755);
+for (const buildArch of arches) {
+  const pins = pinsByArch[`darwin-${buildArch}`];
+  if (!pins) throw new Error(`No pinned mainnet binary for darwin-${buildArch}`);
+  const verified = path.join(root, 'staging', `verified-bin-${buildArch}`);
+  const stagedBin = arch === 'universal' ? path.join(root, 'staging', `universal-bin-${buildArch}`) : binDir;
+  run('node', ['scripts/fetch-pinned-binaries.mjs', '--platform', `darwin-${buildArch}`,
+    '--profile', 'swarm-mainnet', '--dest', verified, '--staging', `staging/download-${buildArch}`]);
+  fs.mkdirSync(stagedBin, { recursive: true });
+  for (const [source, dest, expected] of [
+    ['zebrad', 'swarm-node-daemon', pins.node_sha],
+    ['privacy-miner', 'swarm-miner', pins.miner_sha],
+  ]) {
+    const raw = path.join(verified, source);
+    if (sha(raw) !== expected) throw new Error(`${source} differs from the reviewed SHA256`);
+    const staged = path.join(stagedBin, dest);
+    fs.copyFileSync(raw, staged);
+    fs.chmodSync(staged, 0o755);
+  }
+  if (fs.readdirSync(stagedBin).some((name) => /keytool|\.keys\.json$|^cookie$|\.env/i.test(name))) {
+    throw new Error('Refusing to package a key tool or private material');
+  }
+  run('node', ['scripts/make-binaries-manifest.mjs', '--platform', `darwin-${buildArch}`, '--bin-dir', stagedBin]);
+  if (arch !== 'universal') run('node', ['scripts/prepare-mac-signed-binaries.mjs', '--arch', buildArch]);
 }
-if (fs.readdirSync(binDir).some((name) => /keytool|\.keys\.json$|^cookie$|\.env/i.test(name))) {
-  throw new Error('Refusing to package a key tool or private material');
-}
-
-run('node', ['scripts/make-binaries-manifest.mjs', '--platform', `darwin-${arch}`]);
-run('node', ['scripts/prepare-mac-signed-binaries.mjs', '--arch', arch]);
+if (arch === 'universal') run('node', ['scripts/prepare-mac-universal-binaries.mjs']);
 run('node', ['scripts/set-build-profile.mjs', 'swarm-mainnet']);
 run('npm', ['run', 'build:ui']);
 run('npx', ['electron-builder', '--mac', `--${arch}`, '--config', 'configs/swarm-mac-developer-id.cjs', '--publish', 'never'],
   { env: { ...process.env, SWARM_MAC_ARCH: arch } });
 }
 
-run('bash', ['scripts/check-arch.sh', path.dirname(app), arch === 'x64' ? 'x86_64' : 'arm64']);
+for (const slice of arch === 'universal' ? ['arm64', 'x86_64'] : [arch === 'x64' ? 'x86_64' : 'arm64']) {
+  run('bash', ['scripts/check-arch.sh', path.dirname(app), slice]);
+}
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
 run('xcrun', ['stapler', 'validate', app]);
 run('spctl', ['--assess', '--type', 'execute', '--verbose=4', app]);
