@@ -23,6 +23,10 @@ on:
         description: 'Verify the published signed mainnet Intel DMG on an Intel Mac'
         type: boolean
         default: false
+      verify_signed_universal:
+        description: 'Verify the published signed universal mainnet DMG on an Intel Mac'
+        type: boolean
+        default: false
       network_profile:
         description: 'Which SWARM network this build is for: swarm-testnet or swarm-mainnet'
         required: false
@@ -44,7 +48,7 @@ permissions:
 
 jobs:
   select-platforms:
-    if: ${{ !inputs.verify_signed_intel }}
+    if: ${{ !inputs.verify_signed_intel && !inputs.verify_signed_universal }}
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.select.outputs.result }}
@@ -293,7 +297,7 @@ jobs:
           retention-days: 7
 
   verify-signed-intel:
-    if: ${{ inputs.verify_signed_intel }}
+    if: ${{ inputs.verify_signed_intel && !inputs.verify_signed_universal }}
     runs-on: macos-15-intel
     timeout-minutes: 25
     steps:
@@ -335,3 +339,48 @@ jobs:
       - name: Detach the test image
         if: always()
         run: hdiutil detach /Volumes/SWARM-Node-Intel-Verify || true
+
+  verify-signed-universal:
+    if: ${{ inputs.verify_signed_universal }}
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install verification dependencies
+        run: npm ci
+      - name: Download and hash the published universal packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p signed-universal
+          gh release download swarm-node-0.2.0-mainnet.5-macos \
+            --repo Swarm-Official/swarm-releases \
+            --pattern 'SWARM-Node-0.2.0-mainnet.5-mac-universal.*' \
+            --pattern 'SHA256SUMS-mac-universal' --dir signed-universal
+          cd signed-universal
+          shasum -a 256 -c SHA256SUMS-mac-universal
+      - name: Verify Gatekeeper and run the native Intel slice
+        run: |
+          set -euo pipefail
+          dmg=signed-universal/SWARM-Node-0.2.0-mainnet.5-mac-universal.dmg
+          hdiutil verify "$dmg"
+          xcrun stapler validate "$dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint /Volumes/SWARM-Node-Universal-Verify "$dmg"
+          app='/Volumes/SWARM-Node-Universal-Verify/SWARM Node.app'
+          bash scripts/check-arch.sh /Volumes/SWARM-Node-Universal-Verify arm64
+          bash scripts/check-arch.sh /Volumes/SWARM-Node-Universal-Verify x64
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          node -e 'const a=require("@electron/asar"); const fs=require("fs"); const c=require("crypto"); const p=process.argv[1]; const v=JSON.parse(a.extractFile(p,"electron/net/build-profile.json")); const m=JSON.parse(a.extractFile(p,"electron/net/binaries.json")); if(v.profile!=="swarm-mainnet") throw Error(`wrong profile: ${v.profile}`); for(const arch of ["arm64","x64"]) for(const kind of ["zebrad","miner"]) { const e=m.platforms[`darwin-${arch}`][kind]; const f=process.argv[2]+"/Contents/Resources/bin/"+e.file; const h=c.createHash("sha256").update(fs.readFileSync(f)).digest("hex"); if(h!==e.sha256 || e.network!=="SwarmMainnet") throw Error(`bad ${arch} ${kind}`); }' "$app/Contents/Resources/app.asar" "$app"
+          "$app/Contents/Resources/bin/swarm-node-daemon" --version
+          "$app/Contents/Resources/bin/swarm-miner" --help >/dev/null
+          node scripts/smoke-renderer.mjs "$app/Contents/MacOS" signed-universal/smoke
+          ditto -x -k signed-universal/SWARM-Node-0.2.0-mainnet.5-mac-universal.zip signed-universal/zip-app
+          codesign --verify --deep --strict 'signed-universal/zip-app/SWARM Node.app'
+      - name: Detach the test image
+        if: always()
+        run: hdiutil detach /Volumes/SWARM-Node-Universal-Verify || true
