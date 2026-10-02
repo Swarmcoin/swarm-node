@@ -154,6 +154,13 @@ class MinerPool extends EventEmitter {
     }
     w.child = child;
     w.pid = child.pid;
+    // Mining was stopped while this worker was being started: it must not
+    // outlive the stop that already ran past it.
+    if (!this.workers.includes(w) || this.desired <= index) {
+      this.workers = this.workers.filter((x) => x !== w);
+      await this.stopWorker(w);
+      return null;
+    }
     child.on('line', (line) => this.handleLine(w, line));
     child.on('exit', ({ code }) => {
       this.log(`[w${index}] exited${code == null ? '' : ` (code ${code})`}`, 'app');
