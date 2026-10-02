@@ -30,6 +30,15 @@ const NP = require('./chain/network-profile');
 const L = require('./lock-code');
 const MC = require('./map-city');
 const V = require('./ipc-validate');
+const AC = require('./chain/access-code');
+const { createAccessStore } = require('./access-store');
+const { TunnelForwarder } = require('./chain/tunnel');
+const { requireBinary } = require('./chain/binaries');
+const { canBindPort, freeEphemeralPort } = require('./chain/hardware');
+
+// The loopback port the closed-start tunnel listens on when it is free. Any
+// other free loopback port works as well; this one is only the first choice.
+const TUNNEL_PORT = 28243;
 
 // ---------------------------------------------------------------- identity
 // A data folder that cannot collide with the earlier AI-compute app, which
@@ -152,6 +161,45 @@ let mapData = null;
 let netStatus = null;
 let win = null;
 let quitting = false;
+// The closed start: what the definition says, where the code is kept, and
+// why a stored code could not be used (said once on the screen).
+let closedStart = { active: false };
+let accessStore = null;
+let accessProblem = null;
+
+/**
+ * Turn a checked access code into the tunnel that uses it.
+ * The parsed payload lives in the TunnelForwarder for as long as the app runs,
+ * because a restarted tunnel needs the key again; it is never logged and never
+ * sent to the window.
+ */
+function makeTunnel(payload) {
+  return new TunnelForwarder({
+    payload,
+    binary: () => requireBinary('tunnel', { allowUnpinned: !app.isPackaged }),
+    choosePort: async (attempt) => {
+      for (const p of [TUNNEL_PORT + attempt, TUNNEL_PORT + attempt + 10]) {
+        if ((await canBindPort(p, '127.0.0.1')).ok) return p;
+      }
+      return (await freeEphemeralPort()) || TUNNEL_PORT + attempt;
+    }
+  });
+}
+
+/** The stored code, checked again, as {tunnel, access} or null. */
+function loadStoredAccess() {
+  const r = accessStore.read();
+  if (!r.ok) {
+    if (!r.missing) accessProblem = r.error;
+    return null;
+  }
+  const parsed = AC.parse(r.code);
+  if (!parsed.ok) {
+    accessProblem = `The saved access code is no longer valid: ${parsed.error} Paste it again.`;
+    return null;
+  }
+  return { tunnel: makeTunnel(parsed.payload), access: AC.describe(parsed.payload), encrypted: r.encrypted };
+}
 
 // ---------------------------------------------------------------- window
 const CSP = [
@@ -344,6 +392,12 @@ function registerIpc() {
   // ---- shell ----
   handle('shell:getConfig', () => ({
     ...settings.data,
+    // The stored access code never leaves the main process, not even as the
+    // encrypted blob.
+    accessCode: undefined,
+    closedStart: closedStart.active
+      ? { active: true, until: closedStart.until, untilText: closedStart.untilText, reason: closedStart.reason }
+      : { active: false },
     appVersion: app.getVersion(),
     electron: process.versions.electron,
     userDataDir: app.getPath('userData'),
@@ -404,7 +458,7 @@ function registerIpc() {
     return settings.data;
   });
   handle('shell:setSetupStep', (step) =>
-    settings.save({ setupStep: V.oneOf(V.text(step, { max: 24, name: 'step' }), ['welcome', 'consent', 'payout', 'check', 'dashboard'], 'step') }));
+    settings.save({ setupStep: V.oneOf(V.text(step, { max: 24, name: 'step' }), ['welcome', 'consent', 'access', 'payout', 'check', 'dashboard'], 'step') }));
   // The wizard is finished only when the user reaches the end of it. The
   // RENDERER cannot pass a version in: it is stamped here from the running
   // build, so the marker cannot be forged or back-dated by the page.
@@ -513,6 +567,50 @@ function registerIpc() {
     });
     if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
     return engine.setDataDir(V.dataDir(r.filePaths[0]));
+  });
+
+  // ---- the closed-start access code --------------------------------------
+  // One string, pasted once. It is checked here, kept with the operating
+  // system's protection, and turned into the tunnel; the window only ever
+  // learns the machine name it was made for. See electron/chain/access-code.js.
+  handle('access:status', () => ({
+    required: closedStart.active === true,
+    present: !!engine.tunnel,
+    machine: engine.access ? engine.access.machine : null,
+    reason: closedStart.active ? closedStart.reason : null,
+    problem: accessProblem,
+    protectedByOs: accessStore.encryptionAvailable()
+  }));
+
+  handle('access:set', async (raw) => {
+    const parsed = AC.parse(typeof raw === 'string' ? raw : '');
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+    // A running node keeps the tunnel it started with; replacing the code
+    // stops everything first so nothing runs on the old one.
+    if (engine.node && engine.node.running) await engine.stopNode();
+    else if (engine.tunnel) await engine.tunnel.stop();
+    const stored = accessStore.write(parsed.code);
+    const access = AC.describe(parsed.payload);
+    engine.setTunnel(makeTunnel(parsed.payload), access);
+    accessProblem = null;
+    engine.log(`access code accepted for ${access.machine} (tunnel address ${access.tunnelAddress})` +
+      (stored.encrypted ? '' : '; this computer has no protected store, so it is kept in an owner-only file'));
+    return {
+      ok: true,
+      machine: access.machine,
+      message: `Access code accepted for ${access.machine}`,
+      protectedByOs: stored.encrypted
+    };
+  });
+
+  handle('access:remove', async () => {
+    // Everything that used the tunnel stops first: mining, the node, the tunnel.
+    await engine.stopNode();
+    engine.setTunnel(null, null);
+    accessStore.remove();
+    accessProblem = null;
+    engine.log('access code removed: this computer can no longer connect to the closed network');
+    return { ok: true };
   });
 
   // ---- the code lock, and signing out ------------------------------------
@@ -699,9 +797,33 @@ app.whenReady().then(() => {
 
   // Each network keeps its own chain folder. A mainnet node opened on testnet
   // state is a wrong-chain node, and the state database cannot be shared.
-  if (!settings.data[profile.dataDirSetting]) {
-    settings.save({ [profile.dataDirSetting]: path.join(app.getPath('userData'), profile.dataDirName) });
+  //
+  // And since the relaunch of 2 October 2026, each CHAIN does: on a production
+  // network the folder is named after the genesis, so the first chain's
+  // `chain-mainnet` is never opened again, and never moved or deleted either.
+  const genesisHash = (manifest.genesis || {}).hash;
+  const chainDir = NP.chainDirFor(profile, genesisHash, settings.data, app.getPath('userData'));
+  if (profile.production) {
+    const map = settings.data.dataDirByGenesis || {};
+    if (!map[String(genesisHash).toLowerCase()]) settings.save(NP.rememberChainDir(profile, genesisHash, settings.data, chainDir));
+  } else if (!settings.data[profile.dataDirSetting]) {
+    settings.save({ [profile.dataDirSetting]: chainDir });
   }
+  const previousChainDir = NP.previousChainDir(profile, genesisHash, settings.data, app.getPath('userData'));
+  if (previousChainDir) console.log(`[network] the earlier chain's folder ${previousChainDir} is left untouched`);
+
+  // CLOSED START. Read from the embedded definition; a definition without it
+  // runs exactly as the public app did.
+  try {
+    closedStart = NP.closedStartOf(manifest);
+  } catch (e) {
+    dialog.showErrorBox('SWARM Node cannot start', e.message);
+    app.exit(1);
+    return;
+  }
+  if (closedStart.active) console.log(`[network] closed start until ${closedStart.until}: an access code is required`);
+  accessStore = createAccessStore({ settings, safeStorage, fs, dir: app.getPath('userData') });
+  const stored = closedStart.active ? loadStoredAccess() : null;
 
   // And its own ports. The stored ones belong to whichever profile was running
   // when they were written - and on a fresh install they come from the
@@ -753,9 +875,15 @@ app.whenReady().then(() => {
   engine = new ChainEngine({
     manifest,
     profile,
-    dataDir: NP.dataDirFor(profile, settings.data, app.getPath('userData')),
+    dataDir: chainDir,
     settings: settings.data,
     saveSettings: (s) => settings.save(s),
+    rememberDataDir: (dir) => NP.rememberChainDir(profile, genesisHash, settings.data, dir),
+    closedStart,
+    tunnel: stored ? stored.tunnel : null,
+    access: stored ? stored.access : null,
+    relaunch: NP.relaunchOf(manifest),
+    previousChainDir,
     allowUnpinnedBinaries: !app.isPackaged,
     simulateStandardMiner: process.env.SWARM_NODE_SIMULATE_MINER === '1' && !app.isPackaged,
     idleSeconds: () => powerMonitor.getSystemIdleTime()

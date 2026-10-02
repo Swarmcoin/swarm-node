@@ -52,9 +52,9 @@
     }
   },
   "genesis": {
-    "hash": "01c34428b9e67cdd8345e0b365aaa37dd8d2d65d3869e0e5d77d567f2c39afdd",
-    "time_unix": 1790425197,
-    "time_utc": "2026-09-26T12:19:57Z",
+    "hash": "01b76d8a0f18c502b23ab6605e26296d189aa5770fc4a34155e5c7b250a0eff2",
+    "time_unix": 1790955697,
+    "time_utc": "2026-10-02T15:41:37Z",
     "compact_target": "2007ffff",
     "start_nonce": "0000000000000000000000000000000000000000000000000000000000000000",
     "upstream_fixture": "zebra-test/src/vectors/block-test-0-000-000.txt",
@@ -63,14 +63,14 @@
     "generator_manifest_file": "genesis-manifest.json",
     "spendable_outputs": 0,
     "premine": "none; upstream excludes genesis outputs from the UTXO set",
-    "hex_file_sha256": "6e34c9383348957251ed5984d4b83da14e7a3f52860ef1868047ceb3b37f29fb",
+    "hex_file_sha256": "137e2e962c749e8bad49ad7cff72eb1e35feaf91dc717c36313d660d08d87f8f",
     "time_rule": "The header time must be in the PAST when the network starts. A block's time must exceed the median time past of its ancestors, and for block 1 that median is the genesis time, so a future genesis time blocks block 1 until the wall clock passes it.",
     "generator": {
       "tool": "privacy-miner genesis",
       "note": "The genesis tool takes no --network: the block is the unchanged upstream fixture with a new header time, the fixed target 2007ffff and a solved nonce, so it is network-independent. The SwarmMain profile pins it by hash."
     },
-    "hex": "040000000000000000000000000000000000000000000000000000000000000000000000db4d7a85b768123f1dff1d4c4cece70083b2d27e117b4ac2e31d087988a5eac400000000000000000000000000000000000000000000000000000000000000006db8b76affff0720000000000000000000000000000000000000000000000000000000000000000ffd4005008bc48eff974ac18315642a91a49bbf03053be7cb21e4ff10ab5d9229a64853b5262003d20419fe823711e713eb614482edea04c166d4b72bf26af67a00923477372e7de81055451c4af6e27c68a72c58b970260107d6ebd6024ced440112bd969f86ceade71634b52a3a5edc288adea87ed2a336d24e04990808c946210962e3b7e8945b71be6f36b910cb76b1f0f4ff7f421970f1a184db6a6bde623a0340513b3703ac3e2b2b034ed439238966d905fbf13fb1a4d68ccc4efbfb9e08c933378bd1c0c38d56c32bb45e8154e042f0d7d4260e51c57c20a0496629233a59c02cd553bf96dc94338e0ba23061caa3a1bd4400757ca63285b9fc3e68045630dcb145ef0fcf01a3a38e5f8e6321229d37fb0e93bb79680602e6c27bb69ee7726209e0ae3e30c5122203b8b9dd0fa922313167822ecb26bbe939855c38efcbb10d597e09d46b33c553ea2b4ec68079c636085aed2219e64cf1d16a4b30f578f5aee9afd9536d2838e5a2619550a328a4b2cddc64f8116ac87d45831cfd86969b926d8bf97216825562133af510f9ce3d21602f29ae929ba99bcd029038bcc0723ea35fe3ac18159bb6da6294a55164f5ef126cee22f0801fe8412a19861558d5af59624be3e6c226604d42e4b97cbf2c668f75dcdbd5e12ae5d311c5cb36bd1cbbabd43664ca1b5db9a2ca7d279247749d4a940ee1beb9013b098be369a6dc02bd4733993d747f4a12e5addc793e4ba3076749e87085483dd546b8d366c696a4b900fb10178a062fce47f133c024ccae360e122f1a3252ae2aa50328037833aff3e504727bced9011f432ecd0e11d1eff3e41cd6d3c1a486b6f23749f78f2c5fbaa71df73fe55bc87604921fa4cd62b0f3e14c232fa6261d605e1867d0c0439c446919fa7be91b67717fb7ce68841c5fe1201d095ee2c9c76a5f22aedffdd940da018c25470fd6e411b157d0972d5affbd53001432cd0220bf49ba86956da35012c33de27a7e385895ad1f1247bec57618c7f6eb4084c88b45fc5a196059b8002c289411c9db68e9d52115f7ebfceb721ac578e10402fcc084dff3e97bf9c154fd61b8cde5a97a5d2e5a0fa2496341991ec373af04cba44cc4b939a0b7b97a1a7f1f22bcf24ba3dbb2a3a16fba9f395efedb7c1f556f52c0de216737ea3ff9832376545ad2011d8d500569a2cafc18e190cf9960988110c6ec4927c5bbd009c0de8a2002a5c7cee151eccb29996cab1d99b79d135b8193015fb2fbd491993b89f4256ad4189fdf04242c338c40d6768ddf5c12eed94f9cfdd61b9bba160c335f81a7e8ef5f926ba1055f503a99feed3ccaec212edeb60d13cef583c183320a397fd0f357ced76027c563ae85cde85ab910e64ea05d8ac1cbb8ffd5584629bc20d26dd395bf22a9545fe7674a75d77d6f4b028748aad1503cada29fc5558b469bc2348a15e773125eef813810a078d0c0c4b27d60ec3650423847fb032bae34dee2e577f773619ef42733ad89cf7c995e0dd54d1df02122917bb6355a1f4d88a9a47e990b60032cdf47761c3133977cc1fa89aa8f691420b8cb4031b3e33a15f098898da4c67309ecbaf70243be24be14c79aca00b7a50df9dd1560ba606efd9e85d13e8f1690c57b80cc45c70d03044f224316f64b7c3d4ed20f91e536408d2bb9491792cb095f2b41d5ed3036a21e01b18c363516dfd5bf44d2584f5a696b9a940bd71fb4f3e2d664528d914d03d15530674550b2bbd6a954c797dc97a0bac3b60426e08865c58e1cfeb50a4711b176a2490c689aa7d501443219ae8e373eb90232188c38c4ea99565913e694b97bad96a38a83ff49ab29a799950d97cd73f9ef84945437f6218a99179ea6393da6200b973ca31d7054174cc54e9a1765b405fc0101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff071f0104455a6361736830623963346565663862376363343137656535303031653335303039383462366665613335363833613763616331343161303433633432303634383335643334ffffffff010000000000000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000",
-    "hex_sha256": "6e34c9383348957251ed5984d4b83da14e7a3f52860ef1868047ceb3b37f29fb",
+    "hex": "040000000000000000000000000000000000000000000000000000000000000000000000db4d7a85b768123f1dff1d4c4cece70083b2d27e117b4ac2e31d087988a5eac40000000000000000000000000000000000000000000000000000000000000000b1d0bf6affff07200000000000000000000000000000000000000000000000000000000000000007fd4005002408ab06144e2cc9326690d2d39379c493dd4e8836ae7a952c6f0fcb8c7ab4a0b7a9a2ae45dedebaa000c789f98318746b0a8f20ae540fc164be0e8840260866c599135e8b9d91c0036a34d07a2353141ec263025a45effc20a6fd9d44790964fdcd9edb24be45be252a893cbe98f7c14559b357cedd8e9560de7b9e8b0916d2f028dc74b7246e2168cbd96acd0b64f3f1b319b7e7a8da63231fe4f4e2cd20ea8091b7855e06a8006e9a4d42cbfbe4aaa4c1b4d9bcb278bbb2f13f87296ed51066d86d2dc8396754f9d3fa820ad01c26b41b89ebb2a148d2a1602a01c03be959db2f52bc5b5b5618ce584f1967734c4d462182d67c7232c87aa774053ae9bc324715b4acdb324e4d381ee16e465e39fb0eb1daa0690dc9d37c5d221cde6fa3f4ae9f9c6aa6136cfa654b59ef6d6afdf9709a69ac8a8e8f3feae1562704cac9d9c599ea7b26200e45b7c20e01f073ee028531f3c3b711bfcd13c0c69796ad2b8e7a5d24d21a943248f08bbe8af91ca35550cd5e2a5b18fb4b261bb6ac482321bb23d5a625fa7334ecba27ff1552284eb377597e5e86e5834e456ccbb9dc762b401d40ca091cb1fe7904266f11df127d4524fee9d163d4feb712fd956e145a94a5301647b9f9ebc597483adf57660b327d5cea12ff4be8a5534aac4a6c40f280d06cd816cc77a1394b47008a1921f0abe2b71ddc76577bce03aa4369bd07fcdaa36b6107a0c15b7bc030bfc5cf14d0898adc8d48112ae4866ac0fd08c29e3efb85861bf1fbfa0921eeaf4b448aa3d966f493cff37ef3c644d4965778915583f193a74b846cb852b70cd968700b54c677f55bc5696a742373f1ea96aacae9be281d2615a3cf9fe295ede5b3a526c5c1e01171257cb46125b5db2ce14f904d949a4571f070ee296bbafa43f73aac47203453d7311d1485203375a8eede3e7e13e500325ed8d30e17fb72a919ee81724eb69343bc9b7c22dddedea35634a5bfbd2522cddc4bc1b7f45a226a1e0df9abdf885b28d0a5e5811e73cb25a5518f06b37bf5dd09f5254633e8a049e9d76109cae16d1a0d6d06577a39860e64cd541c8389307b7421dd1292758519ee2333d43232b19a6ce1cef0ed7182e3ee5bbee409ccb6dc43331fb5d34a92d753d76042e7963efb4827d1450befd5c535fedfd2a73bffede8ba257c9e9f054b5575ff5e4eeb01a342a92b3bbb7b0e5fd8f4150d81378c866eddad779f463d22c2740e196836a71e07e741819e6667199132b9314256b9f257b19522dd1fcbc19cf738c9ddd517522801ff45b15ca852c39916ac0329748f055d14288684e3582896e96d398f4c74099bde7f2684657d68a86d64fa324f09c8dcc93d192d41c5dc501e6cf502732fcb340664f2c65e4829310ce4662b60928b7f0ff4e207dbccaf0bab7b74bf014351eabf16acf38d385169ebab87d592195513fd593af5270cafc185972767d09af5626a1995da22560af014c4086a6505cfc281e97cdc05758a1c99b26f1c77636a2051cab5c7fad8b58a4ff492527094701e08a653cf738432bbfc9b873a235ba2266ccbf6a5ae0c27a5b4a40ab7a2aa3141cea0be1d05e7a13a3c2818462ce04e149a52c6d72358ed52db0519b9b07e8019efc0f536b4a89beaa2d236f65ef196515c38bc7c01678b19fad122daa9823211191ac4309548bd7e340e7ae1d009078909addc48110f6288ee1e3697acd801cc81886f4e29ad1a56b19c03996a8077d65b73bc332506428ae3bc93a2047368aab79752ce741c734002445fa83bc63d0898baf1d5fbe8f2d5b9e55527c9421b9cb8d5e2db315cc5e63d20e41705bbbb5d1ed1037e1b2f1ce1ef4796dc57195ad508f345cc5cb1be5d97351c36df5fc57c8697aa66605aa2b217bea5870101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff071f0104455a6361736830623963346565663862376363343137656535303031653335303039383462366665613335363833613763616331343161303433633432303634383335643334ffffffff010000000000000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000",
+    "hex_sha256": "137e2e962c749e8bad49ad7cff72eb1e35feaf91dc717c36313d660d08d87f8f",
     "hex_note": "The genesis block bytes. A fresh node normally receives block 0 from a peer; Zebra only inserts genesis by itself on Regtest. When no peer has served it, SWARM Node hands these bytes to its own node once and checks the resulting hash."
   },
   "economics": {
@@ -140,15 +140,15 @@
     "public_p2p_note": "The SwarmMain default. Written to zebrad.toml so an operator can read it, never so that the network can be changed.",
     "rpc": 28232,
     "rpc_note": "Loopback only. The node RPC is never exposed publicly; cookie authentication stays enabled.",
-    "lightwallet_grpc": 8443,
-    "lightwallet_grpc_note": "Zaino behind TLS on lwd-main.swarm.green; 8443 is the public TLS port, not Zaino's own listener."
+    "lightwallet_grpc": 443,
+    "lightwallet_grpc_note": "Zaino behind TLS on lwd-main.swarm.green; 443 is the public TLS port since the relaunch of 2026-10-02 (8443 is no longer served), not Zaino's own listener."
   },
   "seed_peers": [
     "seed-main.swarm.green:28233"
   ],
   "seed_peers_note": "There is no DNS seeder for a custom network, so this is a static name with one A record per seed node. Zebra makes one outbound connection per IP, so a second seed needs its own public IP.",
   "light_wallet_servers": [
-    "lwd-main.swarm.green:8443"
+    "lwd-main.swarm.green:443"
   ],
   "light_wallet_servers_note": "The light-wallet endpoint the SWARM Wallet uses on this network. TLS, no plaintext fallback.",
   "destination_addresses": {
@@ -178,13 +178,13 @@
     "by": "scripts/swarm/render_mainnet_manifest.py",
     "from_template": "network/swarm-mainnet/manifest.template.json",
     "ceremony_input": "ceremony.json",
-    "ceremony_input_sha256": "db03e5483d7320d2f98d6285523d5108ce6315c191518eb1096b3696c16eb8e6",
-    "at_utc": "2026-09-26T12:23:33Z",
-    "notes": "SWARM mainnet launch 2026-09-26. Genesis generated on 64.94.84.101 with release-ae7cfaf92/privacy-miner from the upstream fixture block-test-0-000-000.txt (sha256 97297f9ec45022c57e3c10b590ab4bf058f952ecb4090ea763713a12199606e9); header hash independently recomputed in Python. Zero spendable outputs, no premine. Baseline miner payout s3R1bWZPrRCtKL122ZN6uySu1ewk2ku849C."
+    "ceremony_input_sha256": "ac5df634c50058ff1875072b21f762abb52f9c0cfea13be0f0900883a7ea2d1a",
+    "at_utc": "2026-10-02T15:42:42Z",
+    "notes": "SWARM mainnet relaunch 2026-10-02, closed start. Same three fund addresses as the 2026-09-26 launch. Light-wallet port set to 443 after rendering (the chain's web front shares the host's port 443)."
   },
   "_embedded_by": "scripts/embed-network.mjs — SWARM Node",
-  "_embedded_from": "D:/privacy/network/swarm-mainnet/manifest.json",
-  "_embedded_at": "2026-09-26",
+  "_embedded_from": "D:/privacy/network/swarm-mainnet-r2/manifest.json",
+  "_embedded_at": "2026-10-02",
   "sync_gate": {
     "min_peers": 1,
     "max_behind_blocks": 2,
@@ -196,11 +196,20 @@
   },
   "links": {
     "website": "https://swarm.green",
-    "explorer": "https://mainnet.explore.swarm.green",
+    "explorer": "https://explore.swarm.green",
     "swarm_map": "https://swarm.green/#map",
     "x": "https://x.com/swarm_coin",
     "source": "https://github.com/Swarm-Official"
   },
   "contact_email": "swarmofficial@atomicmail.io",
-  "channels_note": "Set by the owner on 2026-09-21. No other account or address speaks for the project. The project never asks for recovery phrases, private keys or payments through any channel."
+  "channels_note": "Set by the owner on 2026-09-21. No other account or address speaks for the project. The project never asks for recovery phrases, private keys or payments through any channel.",
+  "closed_start": {
+    "until": "2026-10-23T15:42:00Z",
+    "note": "While this is set, SWARM Node starts the node only with an access code from the SWARM team. The code opens a private WireGuard tunnel run inside the app; the node's only peer is that tunnel on 127.0.0.1 and no public seed is dialled. A build without this entry uses the public seeds."
+  },
+  "relaunch": {
+    "date": "2026-10-02",
+    "previous_genesis": "01c34428b9e67cdd8345e0b365aaa37dd8d2d65d3869e0e5d77d567f2c39afdd",
+    "note": "The chain was restarted from a new genesis. SWARM Node keeps a chain folder per genesis and never opens, moves or deletes the earlier one."
+  }
 }

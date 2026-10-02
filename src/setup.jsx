@@ -24,7 +24,7 @@ function Steps({ index }) {
 // profile (state.network), which is the same source the header uses.
 const production = (chain) => !!(chain && chain.production);
 
-export function Welcome({ network, chain, onNext }) {
+export function Welcome({ network, chain, closed, onNext }) {
   const prod = production(chain);
   return (
     <div className="setup" style={{ textAlign: 'center' }}>
@@ -51,6 +51,7 @@ export function Welcome({ network, chain, onNext }) {
           <p className="small muted" style={{ margin: 0 }}>
             You paste one address from the SWARM Wallet. This app never sees a seed phrase,
             a password or a private key, because it never needs one.
+            {closed ? ' During the closed start it also keeps the access code you paste: it opens this computer’s connection to the network and can never spend coins.' : null}
           </p>
         </div>
         <div className="card flat">

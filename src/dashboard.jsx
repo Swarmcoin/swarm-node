@@ -9,6 +9,7 @@ import { Icon, Pill, Metric, Notice, Switch, fmtCoins, fmtBytes, fmtDuration, fm
 import { CodeLockSettings } from './lock.jsx';
 import { rewardStatus } from './reward-status.mjs';
 import { channelRows } from './channel-links.mjs';
+import { AccessCodeCard, StatusCard } from './access.jsx';
 
 // ---------------------------------------------------------------- mining
 export function MiningView({ s, api }) {
@@ -42,12 +43,26 @@ export function MiningView({ s, api }) {
     else if (id === 'stop-foreign-node') r = await api.stopForeignNode();
     else if (id === 'choose-folder') r = await api.chooseDataFolder();
     else if (id === 'override') r = await api.setUserOverride(true);
+    else if (id === 'add-access-code') {
+      const el = document.getElementById('access-code');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const box = el.querySelector('textarea');
+        if (box) box.focus();
+      }
+    }
     if (r && r.ok === false) setErr(r.error);
     setBusy(false);
   }
 
+  const needsCode = !!(s.access && s.access.required && !s.access.present);
+
   return (
     <div className="stack-lg">
+      {/* CLOSED START: without the code nothing else on this page can happen,
+          so the place to paste it comes first. */}
+      {needsCode ? <AccessCodeCard s={s} onChanged={api.refreshConfig} /> : null}
+
       <div className="card glow">
         <div className="row wrap" style={{ gap: 20 }}>
           <div style={{ minWidth: 220 }}>
@@ -100,7 +115,11 @@ export function MiningView({ s, api }) {
         </div>
       </div>
 
-      {!g.allow ? (
+      {/* "Are we up, how much is mined": the network, the tunnel, this node,
+          this computer's mining and what it found, on one card. */}
+      <StatusCard s={s} />
+
+      {!g.allow && !needsCode ? (
         <Notice kind={g.reason === 'no-peers' || g.reason === 'tip-too-old' ? 'warn' : 'plain'}>
           <div style={{ width: '100%' }}>
             <b>Mining is held back.</b>
@@ -712,6 +731,9 @@ export function SettingsView({ s, cfg, api }) {
 
   return (
     <div className="stack-lg">
+      {/* The closed-start access code: shown, replaced or removed here. */}
+      {s.access && s.access.required ? <AccessCodeCard s={s} onChanged={api.refreshConfig} /> : null}
+
       {/* First, because which chain is running decides whether the payout
           address below is even a valid address. */}
       <NetworkCard s={s} cfg={cfg} />
@@ -858,6 +880,12 @@ export function SettingsView({ s, cfg, api }) {
             <tr><td className="muted">Node program</td><td className="num">{s.binaries.zebrad.ok ? 'verified' : 'not usable'}</td></tr>
             <tr><td className="muted">Node SHA-256</td><td className="num" style={{ fontSize: 11, wordBreak: 'break-all' }}>{s.binaries.zebrad.sha256 || '—'}</td></tr>
             <tr><td className="muted">Miner program</td><td className="num">{s.binaries.miner.simulated ? 'simulated' : s.binaries.miner.ok ? 'verified' : 'not bundled'}</td></tr>
+            {s.binaries.tunnel ? (
+              <>
+                <tr><td className="muted">Tunnel program</td><td className="num">{s.binaries.tunnel.ok ? 'verified (onetun, user-space WireGuard)' : 'not usable'}</td></tr>
+                <tr><td className="muted">Tunnel SHA-256</td><td className="num" style={{ fontSize: 11, wordBreak: 'break-all' }}>{s.binaries.tunnel.sha256 || '—'}</td></tr>
+              </>
+            ) : null}
             <tr><td className="muted">Automatic updates</td><td className="num">off — this build has no update feed</td></tr>
           </tbody>
         </table>
@@ -865,7 +893,7 @@ export function SettingsView({ s, cfg, api }) {
             the same upstream tree, and an earlier note claimed they were. */}
         <div style={{ marginTop: 16 }}>
           <div className="kicker">Where the bundled programs come from</div>
-          {[['zebrad.exe', s.binaries.zebrad], ['privacy-miner.exe', s.binaries.miner]]
+          {[['zebrad.exe', s.binaries.zebrad], ['privacy-miner.exe', s.binaries.miner], ['onetun (tunnel)', s.binaries.tunnel]]
             .filter(([, b]) => b && b.provenance && b.provenance.commit)
             .map(([name, b]) => (
               <div key={name} className="card flat" style={{ marginTop: 10, padding: 12 }}>

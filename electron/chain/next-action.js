@@ -17,7 +17,7 @@
 
 /** The action ids the renderer must handle. Anything else is a bug. */
 const ACTIONS = ['stop', 'start', 'arm', 'disarm', 'start-node', 'set-address', 'fix-binary', 'override',
-  'stop-foreign-node', 'choose-folder', 'start-everything'];
+  'stop-foreign-node', 'choose-folder', 'start-everything', 'add-access-code'];
 
 /**
  * @param {object} state the engine snapshot (getState)
@@ -48,7 +48,15 @@ function nextAction(state) {
   // it again, and the line underneath says where it has got to.
   if (m.wanted) {
     return act('stop', '■  Stop mining', 'danger',
-      workingOn(n, g), syncProgress(n, g));
+      workingOn(n, g, s.access), syncProgress(n, g));
+  }
+
+  // CLOSED START, no access code: nothing else can happen until one is
+  // pasted, so that is the one thing the button asks for.
+  const a = s.access || {};
+  if (a.required && !a.present) {
+    return act('add-access-code', 'Paste your access code', 'primary',
+      a.reason || 'This computer needs an access code from the SWARM team.');
   }
 
   // No address: nothing can be paid to anybody. This is the one case where
@@ -155,10 +163,14 @@ function syncProgress(node, gate) {
 }
 
 /** Where the one press has got to, in words. */
-function workingOn(node, gate) {
+function workingOn(node, gate, access) {
   if (!node.running) return 'Starting your node…';
   if (!Number.isInteger(node.height)) return 'Your node is starting up…';
-  if (!node.peers) return 'Looking for other nodes to download the chain from…';
+  if (!node.peers) {
+    return access && access.required
+      ? 'Connecting to the SWARM server through this app’s private tunnel…'
+      : 'Looking for other nodes to download the chain from…';
+  }
   if (gate.allow) return 'Your node is ready; mining is starting…';
   return (gate.message ? gate.message + ' ' : '') + 'Mining begins by itself the moment it is ready.';
 }

@@ -55,6 +55,15 @@ function defaults(manifest) {
     // The mainnet chain folder, kept apart from the testnet one: two chains
     // cannot share a state database.
     dataDirMainnet: null,
+    // Since the relaunch of 2 October 2026 a production chain folder belongs
+    // to its GENESIS: {<genesis hash>: <folder>}. The folder above belonged
+    // to the first chain and is left exactly where it is.
+    dataDirByGenesis: null,
+    // The closed-start access code, as an operating-system encrypted blob
+    // ({enc}) or, where this computer has no such store, a marker that it is
+    // in the owner-only file beside this one ({file: true}). Never sent to the
+    // window, never logged. See electron/access-store.js.
+    accessCode: null,
     // WHICH PROFILE THESE PORTS BELONG TO.
     //
     // The defaults below are built from the bootstrap manifest, which is

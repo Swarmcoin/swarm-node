@@ -1,7 +1,7 @@
 {
   "name": "swarm-node",
-  "version": "0.2.0-mainnet.6",
-  "description": "SWARM Node \u00e2\u20ac\u201d run a full node of the SWARM testnet and mine with one click. Consent-first, one-click stop, nothing runs hidden.",
+  "version": "0.3.0-mainnet.1",
+  "description": "SWARM Node â€” run a full node of the SWARM testnet and mine with one click. Consent-first, one-click stop, nothing runs hidden.",
   "main": "electron/main.js",
   "author": "SWARM <swarmofficial@atomicmail.io>",
   "homepage": "https://swarm.green",

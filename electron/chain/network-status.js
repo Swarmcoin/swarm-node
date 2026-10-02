@@ -73,6 +73,8 @@ function validate(raw, expect = {}) {
   }
 
   const node = raw.node && typeof raw.node === 'object' ? raw.node : {};
+  const tipTimeMs = isoTime(node.tip_time_utc);
+  const serverTimeMs = isoTime(raw.server_time_utc);
   const data = {
     network: typeof raw.network === 'string' ? raw.network.slice(0, 60) : null,
     serverTimeUtc: typeof raw.server_time_utc === 'string' ? raw.server_time_utc.slice(0, 40) : null,
@@ -81,9 +83,40 @@ function validate(raw, expect = {}) {
     seedPeers: int(node.peers, 100000),
     seedHeight: int(node.height, 1e9),
     seedUp: node.up === true,
+    // "Is the chain as a whole up?" - the newest block the server has, and
+    // when it was made. Measured against the server's own clock, so a wrong
+    // clock on this computer cannot make a live chain look stopped.
+    tipTimeUtc: tipTimeMs == null ? null : new Date(tipTimeMs).toISOString(),
+    tipAgeAtServerSec: tipTimeMs != null && serverTimeMs != null ? Math.max(0, Math.round((serverTimeMs - tipTimeMs) / 1000)) : null,
+    tipHash: typeof node.tip_hash === 'string' && /^[0-9a-f]{64}$/.test(node.tip_hash) ? node.tip_hash : null,
+    healthy: typeof raw.healthy === 'boolean' ? raw.healthy : null,
+    targetSpacingSec: int(raw.target_spacing_seconds, 3600),
     note: typeof raw.note === 'string' ? raw.note.slice(0, 400) : null
   };
   return { ok: true, data };
+}
+
+function isoTime(v) {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(v)) return null;
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+// A chain whose newest block is older than this is not producing blocks right
+// now. Blocks come every 75 s on average and gaps of several minutes are
+// ordinary luck; fifteen minutes is twelve block times without one.
+const PRODUCING_MAX_TIP_AGE_SEC = 15 * 60;
+
+/**
+ * The one-line verdict for the status screen: is the network producing
+ * blocks, and how old is its newest one. Null fields render as a dash.
+ * @param {object|null} data  validate().data
+ * @param {number} ageMs      how long ago that data was fetched
+ */
+function producing(data, ageMs = 0) {
+  if (!data || data.tipAgeAtServerSec == null) return { producing: null, tipAgeSec: null };
+  const tipAgeSec = data.tipAgeAtServerSec + Math.max(0, Math.round((ageMs || 0) / 1000));
+  return { producing: tipAgeSec <= PRODUCING_MAX_TIP_AGE_SEC, tipAgeSec };
 }
 
 // Which URLs this module may ever fetch. The allow-list stays - the page has
@@ -188,6 +221,7 @@ class NetworkStatus {
     return {
       ok: !!this.value,
       data: this.value,
+      verdict: producing(this.value, ageMs),
       fetchedAt: this.value ? this.fetchedAt : null,
       ageMs,
       stale: ageMs != null && ageMs > STALE_AFTER_MS,
@@ -197,4 +231,6 @@ class NetworkStatus {
   }
 }
 
-module.exports = { NetworkStatus, validate, statusUrlFor, ALLOWED_STATUS_URLS, STALE_AFTER_MS };
+module.exports = {
+  NetworkStatus, validate, statusUrlFor, producing, ALLOWED_STATUS_URLS, STALE_AFTER_MS, PRODUCING_MAX_TIP_AGE_SEC
+};

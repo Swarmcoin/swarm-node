@@ -27,7 +27,30 @@ import { createRequire } from 'node:module';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NP = createRequire(import.meta.url)('../electron/chain/network-profile.js');
-const src = process.argv[2] || 'D:/privacy/network/swarm-testnet';
+
+// Two optional additions for the relaunch of 2 October 2026:
+//   --closed-start-until <ISO time>   the node joins only through the tunnel
+//                                     an access code opens (closed_start)
+//   --relaunched-on <YYYY-MM-DD> --previous-genesis <hash>
+//                                     the chain was restarted; the app keeps
+//                                     a new folder and says so in a sentence
+// Neither changes which chain is joined: that is still the genesis hash.
+const argv = process.argv.slice(2);
+const flag = (name) => {
+  const i = argv.indexOf(name);
+  if (i < 0) return null;
+  const v = argv[i + 1];
+  argv.splice(i, 2);
+  if (!v) throw new Error(`${name} needs a value`);
+  return v;
+};
+const closedUntil = flag('--closed-start-until');
+const relaunchedOn = flag('--relaunched-on');
+const previousGenesis = flag('--previous-genesis');
+if (closedUntil && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(closedUntil)) throw new Error('--closed-start-until must be YYYY-MM-DDTHH:MM:SSZ');
+if (relaunchedOn && !/^\d{4}-\d{2}-\d{2}$/.test(relaunchedOn)) throw new Error('--relaunched-on must be YYYY-MM-DD');
+if (previousGenesis && !/^[0-9a-f]{64}$/.test(previousGenesis)) throw new Error('--previous-genesis must be 64 hex characters');
+const src = argv[0] || 'D:/privacy/network/swarm-testnet';
 
 const manifestPath = path.join(src, 'manifest.json');
 const genesisPath = path.join(src, 'genesis.hex');
@@ -107,6 +130,22 @@ const out = {
     'Set by the owner on 2026-09-21. No other account or address speaks for the project. ' +
     'The project never asks for recovery phrases, private keys or payments through any channel.'
 };
+if (closedUntil) {
+  out.closed_start = {
+    until: closedUntil,
+    note:
+      'While this is set, SWARM Node starts the node only with an access code from the SWARM team. ' +
+      'The code opens a private WireGuard tunnel run inside the app; the node\'s only peer is that ' +
+      'tunnel on 127.0.0.1 and no public seed is dialled. A build without this entry uses the public seeds.'
+  };
+}
+if (relaunchedOn) {
+  out.relaunch = {
+    date: relaunchedOn,
+    previous_genesis: previousGenesis,
+    note: 'The chain was restarted from a new genesis. SWARM Node keeps a chain folder per genesis and never opens, moves or deletes the earlier one.'
+  };
+}
 
 const dest = path.join(
   ROOT, 'electron', 'net',
@@ -119,4 +158,6 @@ console.log(`  network      ${out.identity.network_name} (magic ${out.identity.n
 console.log(`  genesis      ${out.genesis.hash}`);
 console.log(`  genesis.hex  ${genesisHex.length / 2} bytes, sha256 ${hexSha}`);
 console.log(`  p2p/rpc      ${out.ports.public_p2p} / ${out.ports.rpc}`);
-console.log(`  seeds        ${out.seed_peers.join(', ')}`);
+console.log(`  seeds        ${out.seed_peers.join(', ')}${out.closed_start ? ' (NOT dialled: closed start)' : ''}`);
+if (out.closed_start) console.log(`  closed start until ${out.closed_start.until}`);
+if (out.relaunch) console.log(`  relaunched   ${out.relaunch.date} (previous genesis ${out.relaunch.previous_genesis || '-'})`);

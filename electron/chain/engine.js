@@ -70,6 +70,22 @@ class ChainEngine extends EventEmitter {
     this.dataDir = cfg.dataDir;
     this.settings = cfg.settings;
     this.saveSettings = cfg.saveSettings || (() => {});
+    // How a moved chain folder is remembered. On a production network the
+    // folder belongs to the genesis (network-profile.js, chainDirFor), so the
+    // main process decides the key; a test or an old caller gets the
+    // per-profile key it always had.
+    this.rememberDataDir = cfg.rememberDataDir || ((dir) => ({ [this.profile.dataDirSetting]: dir }));
+
+    // CLOSED START. While the embedded definition carries closed_start, the
+    // node joins only through the tunnel an access code opens, never through a
+    // public seed. `closedStart` is {active, reason, until...}; `tunnel` is a
+    // TunnelForwarder or null when no access code is stored.
+    this.closedStart = cfg.closedStart || { active: false };
+    this.access = cfg.access || null;   // {machine, tunnelAddress} - never the key
+    this.tunnel = null;
+    this.setTunnel(cfg.tunnel || null, cfg.access || null);
+    this.relaunch = cfg.relaunch || null;
+    this.previousChainDir = cfg.previousChainDir || null;
     this.idleSeconds = cfg.idleSeconds || null;
     this.allowUnpinned = cfg.allowUnpinnedBinaries === true;
     this.simulateStandardMiner = cfg.simulateStandardMiner === true;
@@ -99,6 +115,11 @@ class ChainEngine extends EventEmitter {
       recipients: (this.manifest.economics || {}).recipients || [],
       atomicPerCoin: (this.manifest.economics || {}).atomic_unit_per_coin
     });
+    // The blocks this computer found are KEPT, in the chain folder, so "how
+    // much is mined" survives a restart of the app. Tied to the genesis: a
+    // file from another chain is ignored, never merged.
+    this.loadLedger();
+    this._orphanTick = 0;
 
     const ports = this.manifest.ports || {};
     this.rpcPort = Number(this.settings.rpcPort) || Number(ports.rpc);
@@ -170,6 +191,89 @@ class ChainEngine extends EventEmitter {
     return [...this.appLog, ...nodeLines].sort((a, b) => a.t - b.t).slice(-limit);
   }
 
+  // ---------------------------------------------------------------- tunnel
+  /**
+   * Hand the engine the tunnel an access code opened, or take it away.
+   * `access` is what may be shown about the code: the machine name and the
+   * tunnel address, never the key.
+   */
+  setTunnel(tunnel, access) {
+    if (this.tunnel && this.tunnel !== tunnel && this._tunnelLog) {
+      this.tunnel.removeListener('log', this._tunnelLog);
+    }
+    this.tunnel = tunnel || null;
+    this.access = tunnel ? (access || null) : null;
+    if (this.tunnel) {
+      this._tunnelLog = (e) => { if (this.appLog) this.log(e.text); };
+      this.tunnel.on('log', this._tunnelLog);
+    }
+  }
+
+  /** Null when the node may start; otherwise why not, in one sentence. */
+  closedStartBlock() {
+    if (!this.closedStart || !this.closedStart.active) return null;
+    if (!this.tunnel) return this.closedStart.reason || 'This computer needs an access code from the SWARM team.';
+    return null;
+  }
+
+  // ---------------------------------------------------------------- found blocks
+  ledgerFile() { return path.join(this.dataDir, 'found-blocks.json'); }
+
+  loadLedger() {
+    const genesis = String((this.manifest.genesis || {}).hash || '').toLowerCase();
+    let raw;
+    try { raw = JSON.parse(fs.readFileSync(this.ledgerFile(), 'utf8')); } catch { return; }
+    if (!raw || raw.genesis !== genesis || !Array.isArray(raw.blocks)) return;
+    for (const b of raw.blocks) {
+      try {
+        const rec = this.ledger.record(b);
+        if (Number.isFinite(b.firstSeen)) rec.firstSeen = b.firstSeen;
+        if (b.orphaned === true) rec.orphaned = true;
+      } catch { /* a damaged entry is skipped, never guessed */ }
+    }
+  }
+
+  saveLedger() {
+    try {
+      fs.mkdirSync(this.dataDir, { recursive: true });
+      const body = {
+        schema: 'swarm-node-found-blocks/1',
+        genesis: String((this.manifest.genesis || {}).hash || '').toLowerCase(),
+        blocks: [...this.ledger.blocks.values()]
+      };
+      const tmp = `${this.ledgerFile()}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(body, null, 2));
+      fs.renameSync(tmp, this.ledgerFile());
+    } catch (e) {
+      this.log(`could not keep the list of found blocks: ${e.message}`);
+    }
+  }
+
+  /**
+   * A block this computer found can still be replaced by another miner's
+   * block at the same height. Such a block pays nothing, so it is marked and
+   * no longer counted. Checked a few blocks at a time, never on every tick.
+   */
+  async checkOrphans() {
+    if (!Number.isInteger(this.chain.height)) return;
+    let changed = false;
+    for (const b of this.ledger.blocks.values()) {
+      if (b.height > this.chain.height) continue;
+      let hash;
+      try { hash = await this.rpc.getBlockHash(b.height); } catch { return; }
+      const onChain = String(hash || '').toLowerCase() === b.hash;
+      if (!onChain && !b.orphaned) {
+        b.orphaned = true;
+        changed = true;
+        this.log(`block ${b.height} this computer found was replaced by another block at that height; it is no longer counted`);
+      } else if (onChain && b.orphaned) {
+        b.orphaned = false;
+        changed = true;
+      }
+    }
+    if (changed) this.saveLedger();
+  }
+
   // ---------------------------------------------------------------- binaries
   binaryStatus() {
     const z = requireBinary('zebrad', { allowUnpinned: this.allowUnpinned });
@@ -199,7 +303,15 @@ class ChainEngine extends EventEmitter {
         ok: m.ok, reason: m.reason, sha256: m.sha256,
         simulated: this.simulateStandardMiner,
         provenance: prov('miner')
-      }
+      },
+      // The closed-start tunnel program, checked the same way. Only asked
+      // about in a build whose definition has a closed start.
+      tunnel: this.closedStart && this.closedStart.active
+        ? (() => {
+            const t = requireBinary('tunnel', { allowUnpinned: this.allowUnpinned });
+            return { ok: t.ok, reason: t.reason, sha256: t.sha256, provenance: prov('tunnel') };
+          })()
+        : null
     };
   }
 
@@ -212,10 +324,17 @@ class ChainEngine extends EventEmitter {
   // ---------------------------------------------------------------- node
   nodeConfigOptions() {
     const first = this.settings.firstNodeOverride === true;
+    // Closed start: one peer, the tunnel on this computer, and a listener no
+    // other computer can reach. Stored seed or listen settings do not apply.
+    const closed = !!(this.closedStart && this.closedStart.active);
+    const tunnelPort = closed && this.tunnel ? this.tunnel.localPort : null;
     return {
       rpcPort: this.rpcPort,
-      p2pListen: this.settings.p2pListen || `0.0.0.0:${this.p2pPort}`,
-      seedPeers: Array.isArray(this.settings.seedPeers) ? this.settings.seedPeers : undefined,
+      p2pListen: closed ? `127.0.0.1:${this.p2pPort}` : (this.settings.p2pListen || `0.0.0.0:${this.p2pPort}`),
+      seedPeers: closed
+        ? (tunnelPort ? [`127.0.0.1:${tunnelPort}`] : [])
+        : (Array.isArray(this.settings.seedPeers) ? this.settings.seedPeers : undefined),
+      closedStart: closed,
       // Zebra's own health gate is switched on whenever we are NOT claiming to
       // be the first node. It is belt-and-braces behind this app's gate.
       enforceHealthGate: !first && this.settings.zebraHealthGate !== false,
@@ -247,6 +366,14 @@ class ChainEngine extends EventEmitter {
   async startNode() {
     if (this.node && this.node.running) return { ok: true, alreadyRunning: true };
 
+    // Closed start: no access code, no node. Said in one sentence, and the
+    // Mining page offers the place to paste the code.
+    const blocked = this.closedStartBlock();
+    if (blocked) {
+      this.lastError = blocked;
+      return { ok: false, error: blocked, code: 'ACCESS_CODE' };
+    }
+
     // Frozen for as long as this node runs: the node reads the count once.
     this.startedShieldedThreads = this.nodeConfigOptions().internalMinerThreads;
 
@@ -257,6 +384,17 @@ class ChainEngine extends EventEmitter {
       return { ok: false, error: bin.reason };
     }
     this.log(`zebrad verified, SHA-256 ${bin.sha256}`);
+
+    // The tunnel comes up BEFORE the node, so the node's one peer exists when
+    // it first dials. The tunnel's own program is hash-checked the same way.
+    if (this.closedStart && this.closedStart.active) {
+      const t = await this.tunnel.start();
+      if (!t.ok) {
+        this.lastError = `The tunnel to the SWARM server could not start: ${t.error}`;
+        this.log(this.lastError);
+        return { ok: false, error: this.lastError, code: 'TUNNEL' };
+      }
+    }
 
     await this.chooseP2pPort();
     await this.chooseRpcPort();
@@ -444,14 +582,21 @@ class ChainEngine extends EventEmitter {
     return this.genesisState;
   }
 
-  async stopNode() {
+  async stopNode({ keepTunnel = false } = {}) {
     // Stop the miners first, WITHOUT restarting the node: this is the path a
     // node restart itself goes through, so it must never loop.
     await this.dropMining();
-    if (!this.node) return { graceful: true, ms: 0, attempts: 0, hardKilled: false, detail: 'not running' };
+    // The tunnel serves the node only. Stopping the node stops it too, except
+    // on the way through a restart, where the node needs it back at once.
+    const stopTunnel = async () => { if (!keepTunnel && this.tunnel) await this.tunnel.stop(); };
+    if (!this.node) {
+      await stopTunnel();
+      return { graceful: true, ms: 0, attempts: 0, hardKilled: false, detail: 'not running' };
+    }
     const report = await this.node.stop({ timeoutMs: Number(this.settings.stopTimeoutMs) || 20000 });
     clearRecord(this.dataDir);
     this.chain = { ...this.chain, height: null, peers: 0, peersIn: 0, peersOut: 0, synced: null, tipAgeSec: null };
+    await stopTunnel();
     return report;
   }
 
@@ -462,7 +607,7 @@ class ChainEngine extends EventEmitter {
     const previous = this._restartRun || Promise.resolve();
     const run = previous.catch(() => {}).then(async () => {
       this.log(`restarting the node: ${why}`);
-      await this.stopNode();
+      await this.stopNode({ keepTunnel: true });
       return this.startNode();
     });
     this._restartRun = run;
@@ -886,18 +1031,26 @@ class ChainEngine extends EventEmitter {
       subsidyZat: subsidy.totalZat,
       minerSubsidyZat: subsidy.minerZat
     });
+    this.saveLedger();
     this.emit('reward', rec);
     return rec;
   }
 
   async recordShieldedBlock({ height, hash }) {
     const subsidy = await this.blockSubsidyZat(height);
+    // The block's own time, from the chain, when the node can say it.
+    let time = null;
+    try {
+      const b = await this.rpc.getBlock(hash, 1);
+      if (b && Number.isFinite(Number(b.time))) time = Number(b.time);
+    } catch { /* the time stays unknown rather than guessed */ }
     const rec = this.ledger.record({
       hash, height, mode: 'shielded',
       subsidyZat: subsidy.totalZat,
       minerSubsidyZat: subsidy.minerZat,
-      time: null
+      time
     });
+    this.saveLedger();
     this.emit('reward', rec);
     return rec;
   }
@@ -930,6 +1083,7 @@ class ChainEngine extends EventEmitter {
             subsidyZat: subsidy.totalZat,
             minerSubsidyZat: subsidy.minerZat
           });
+          this.saveLedger();
         }
       } catch {
         return; // node busy; try again next tick from the same cursor
@@ -1151,6 +1305,13 @@ class ChainEngine extends EventEmitter {
 
     if (this.mining.on && this.mining.mode === 'standard') await this.scanForRewards();
 
+    // Once a minute, make sure every block this computer found is still on
+    // the chain. A replaced block pays nothing and stops being counted.
+    this._orphanTick = (this._orphanTick + 1) % 60;
+    if (this._orphanTick === 30 && this.ledger.blocks.size && this.node && this.node.running) {
+      await this.checkOrphans().catch(() => {});
+    }
+
     // An address saved while the node was down is usable but unconfirmed.
     // Once the node is answering, ask it - quietly, once, and never in a way
     // that can take a working address away from the user.
@@ -1255,8 +1416,27 @@ class ChainEngine extends EventEmitter {
         benchmark: this.benchmark
       },
       gate: d,
+      // CLOSED START: whether this computer can join at all, and the tunnel
+      // that joins it. Machine name and tunnel address only - never the key.
+      access: {
+        required: !!(this.closedStart && this.closedStart.active),
+        present: !!this.tunnel,
+        machine: this.access ? this.access.machine : null,
+        tunnelAddress: this.access ? this.access.tunnelAddress : null,
+        server: this.access ? this.access.server : null,
+        until: this.closedStart ? this.closedStart.until || null : null,
+        untilText: this.closedStart ? this.closedStart.untilText || null : null,
+        reason: this.closedStart && this.closedStart.active ? this.closedStart.reason : null
+      },
+      tunnel: this.tunnel ? this.tunnel.status() : null,
+      relaunch: this.relaunch
+        ? { ...this.relaunch, previousChainDir: this.previousChainDir || null }
+        : null,
       rewards: {
         blocksFound: totals.blocksFound,
+        orphanedBlocks: totals.orphanedBlocks,
+        lastFoundAt: totals.lastFoundAt,
+        lastFoundHeight: totals.lastFoundHeight,
         transparentBlocks: totals.transparentBlocks,
         shieldedBlocks: totals.shieldedBlocks,
         spendableZat: totals.spendableZat,
@@ -1463,8 +1643,11 @@ class ChainEngine extends EventEmitter {
     // Per profile. Two chains cannot share one state database, so the mainnet
     // folder is remembered separately from the testnet one and neither move
     // drags the other with it.
-    this.settings[this.profile.dataDirSetting] = dir;
+    Object.assign(this.settings, this.rememberDataDir(dir));
     this.dataDir = dir;
+    // The found-blocks list lives in the chain folder: read the new folder's.
+    this.ledger.blocks.clear();
+    this.loadLedger();
     this.rpc = new ZebraRpc({ host: '127.0.0.1', port: this.rpcPort, cookieDir: this.dataDir, timeoutMs: 12000 });
     this.saveSettings(this.settings);
     return { ok: true, dataDir: dir };
@@ -1566,7 +1749,10 @@ class ChainEngine extends EventEmitter {
     const miner = await this.dropMining();
     let node = { graceful: true, ms: 0 };
     if (this.node) node = await this.node.stop({ timeoutMs: Number(this.settings.stopTimeoutMs) || 20000 });
-    return { miner, node };
+    // Last: the node no longer needs its peer.
+    let tunnel = { ok: true, wasRunning: false };
+    if (this.tunnel) tunnel = await this.tunnel.stop();
+    return { miner, node, tunnel };
   }
 }
 

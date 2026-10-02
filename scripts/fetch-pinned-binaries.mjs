@@ -114,7 +114,41 @@ const placed = [
   { name: `privacy-miner${exe}`, member: platform.miner_member || `privacy-miner${exe}`, asset: platform.miner_asset, sha: platform.miner_sha }
 ];
 
-if (profile.layout === 'archive') {
+// --from <dir>: use files already on this machine (a local build) instead of
+// downloading them. The hashes decide exactly as they do for a download.
+const fromDir = args.from ? path.resolve(args.from) : null;
+
+// THE CLOSED-START TUNNEL (onetun), when this profile pins one for this
+// platform. Built from source at a pinned tag by this repository's own
+// workflow; the run that built it and the hash it printed are pinned here.
+const tunnelPinned = !!(platform.tunnel_sha && /^[0-9a-f]{64}$/.test(platform.tunnel_sha));
+if (tunnelPinned) placed.push({ name: `onetun${exe}`, member: `onetun${exe}`, sha: platform.tunnel_sha, tunnel: true });
+
+function extractMembers(archivePath, items) {
+  const unpacked = path.join(staging, 'unpacked');
+  fs.mkdirSync(unpacked, { recursive: true });
+  const tarExe = archivePath.endsWith('.zip') && process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+    : 'tar';
+  run(tarExe, ['-xf', path.relative(unpacked, archivePath).split(path.sep).join('/')], { cwd: unpacked });
+  for (const item of items) fs.copyFileSync(findOne(unpacked, item.member), path.join(dest, item.name));
+}
+
+if (profile.layout === 'run-artifact') {
+  // The archive is a workflow artifact of a run in THIS private repository.
+  const archive = platform.archive;
+  let archivePath;
+  if (fromDir) {
+    archivePath = findOne(fromDir, archive);
+  } else {
+    run('gh', ['run', 'download', String(profile.run_id), '-R', repo, '-n', platform.artifact, '-D', staging], { env: process.env });
+    archivePath = findOne(staging, archive);
+  }
+  const got = sha256(archivePath);
+  if (got !== platform.archive_sha) throw new Error(`${archive} sha256 ${got} does not match the pinned ${platform.archive_sha}`);
+  console.log(`${archive} sha256 ${got} OK (run ${profile.run_id})`);
+  extractMembers(archivePath, placed.filter((p) => !p.tunnel));
+} else if (profile.layout === 'archive') {
   // One archive holds every tool. `tar -xf` reads both .tar.gz and .zip on all
   // three runner images (bsdtar on Windows and macOS, GNU tar on Linux), so
   // there is one extraction path and no unzip dependency.
@@ -146,6 +180,22 @@ if (profile.layout === 'archive') {
   for (const item of placed) {
     fs.copyFileSync(findOne(staging, item.asset), path.join(dest, item.name));
   }
+}
+
+if (tunnelPinned) {
+  const tunnelItem = placed.find((p) => p.tunnel);
+  let found;
+  if (fromDir) {
+    found = findOne(fromDir, tunnelItem.member);
+  } else {
+    if (!/^\d+$/.test(String(platform.tunnel_run || ''))) throw new Error(`no tunnel_run pinned for ${platformKey}`);
+    const tdir = path.join(staging, 'tunnel');
+    run('gh', ['run', 'download', String(platform.tunnel_run), '-R', repo, '-n', platform.tunnel_artifact, '-D', tdir], { env: process.env });
+    found = findOne(tdir, tunnelItem.member);
+  }
+  fs.copyFileSync(found, path.join(dest, tunnelItem.name));
+} else if (profile.tunnel) {
+  console.log(`note: no tunnel pinned for ${platformKey}; a closed-start build cannot connect without it`);
 }
 
 // swarm-keytool creates spending keys. Make shipping it impossible, not

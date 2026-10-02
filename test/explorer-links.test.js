@@ -2,9 +2,11 @@
 
 // Which explorer the app sends people to, per network.
 //
-// SWARM has two block explorers on two hosts: mainnet.explore.swarm.green and
-// testnet.explore.swarm.green. The bare explore.swarm.green was created for the
-// testnet before the mainnet existed and still serves it. Both embedded network
+// SWARM has two block explorers. Since 2026-09-28 the bare explore.swarm.green
+// is the MAINNET explorer (mainnet.explore.swarm.green is its alias) and the
+// testnet one is testnet.explore.swarm.green only; the relaunch brief of
+// 2026-10-02 names explore.swarm.green and only it for mainnet links. Before
+// that move the bare host served the testnet. Both embedded network
 // definitions named that bare host, so the SWARM mainnet build (0.2.0-mainnet.6)
 // showed "Explorer - explore.swarm.green" in Settings and opened the TESTNET
 // explorer for people looking for mainnet blocks and rewards. These tests pin
@@ -23,7 +25,7 @@ const ROOT = path.join(__dirname, '..');
 const MAINNET = require('../electron/net/network-mainnet.json');
 const TESTNET = require('../electron/net/network.json');
 
-const MAIN_EXPLORER = 'https://mainnet.explore.swarm.green';
+const MAIN_EXPLORER = 'https://explore.swarm.green';
 const TEST_EXPLORER = 'https://testnet.explore.swarm.green';
 
 // The allow-list main.js builds from the running network's links: the only
@@ -56,14 +58,13 @@ test('the embedded definitions carry the explorer of their own network', () => {
   }
 });
 
-test('the mainnet definition never names the bare explorer or any testnet host', () => {
+test('the mainnet definition never names any testnet host', () => {
   const hosts = swarmHostsIn(MAINNET);
-  assert.ok(!hosts.includes('explore.swarm.green'), `bare explorer host in ${hosts.join(', ')}`);
   assert.ok(!hosts.includes('testnet.explore.swarm.green'), 'testnet explorer in the mainnet definition');
   assert.ok(!hosts.includes('lwd.swarm.green'), 'testnet light-wallet host in the mainnet definition');
   assert.ok(!hosts.includes('seed.swarm.green'), 'testnet seed in the mainnet definition');
   // And positively: nothing but the website and the mainnet hosts.
-  assert.deepEqual(hosts, ['lwd-main.swarm.green', 'mainnet.explore.swarm.green', 'seed-main.swarm.green', 'swarm.green']);
+  assert.deepEqual(hosts, ['explore.swarm.green', 'lwd-main.swarm.green', 'seed-main.swarm.green', 'swarm.green']);
 });
 
 test('the testnet definition names only testnet hosts, and never the bare explorer', () => {
@@ -76,7 +77,7 @@ test('the testnet definition names only testnet hosts, and never the bare explor
 test('a mainnet build can open the mainnet explorer and cannot open the testnet one', () => {
   const hosts = hostsOf(MAINNET.links);
   assert.equal(V.externalUrl(`${MAIN_EXPLORER}/blocks/1434`, hosts), `${MAIN_EXPLORER}/blocks/1434`);
-  for (const other of [TEST_EXPLORER, 'https://explore.swarm.green']) {
+  for (const other of [TEST_EXPLORER, 'https://mainnet.explore.swarm.green']) {
     assert.throws(() => V.externalUrl(`${other}/`, hosts), /not one of/, other);
   }
   const testHosts = hostsOf(TESTNET.links);
@@ -90,7 +91,7 @@ test('the embed script takes the explorer from the profile, not from a constant'
   assert.doesNotMatch(src, /['"]https:\/\/explore\.swarm\.green/);
 });
 
-test('no shipped source links the bare explore.swarm.green', () => {
+test('no shipped source links the testnet explorer from mainnet code, or the mainnet alias', () => {
   const walk = (d, out = []) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
@@ -103,7 +104,8 @@ test('no shipped source links the bare explore.swarm.green', () => {
   assert.ok(files.length > 10, 'the walk found the sources');
   for (const f of files) {
     const text = fs.readFileSync(f, 'utf8');
-    assert.doesNotMatch(text, /https:\/\/explore\.swarm\.green/, path.relative(ROOT, f));
+    assert.doesNotMatch(text, /https:\/\/mainnet\.explore\.swarm\.green/, path.relative(ROOT, f));
+    if (!/network\.json$/.test(f)) assert.doesNotMatch(text, /https:\/\/testnet\.explore\.swarm\.green/, path.relative(ROOT, f));
   }
 });
 
@@ -117,7 +119,7 @@ test('the Settings row says which network the explorer belongs to, and shows its
   const main = channelRows(MAINNET.links, 'swarm-mainnet');
   const mx = main.find((r) => r.key === 'explorer');
   assert.equal(mx.label, 'Explorer · mainnet');
-  assert.equal(mx.host, 'mainnet.explore.swarm.green');
+  assert.equal(mx.host, 'explore.swarm.green');
   assert.equal(mx.url, MAIN_EXPLORER);
 
   const tx = channelRows(TESTNET.links, 'swarm-testnet').find((r) => r.key === 'explorer');
@@ -135,6 +137,6 @@ test('the Settings row says which network the explorer belongs to, and shows its
   // No network word is invented for a profile the app does not know.
   assert.equal(channelRows(MAINNET.links, 'something-else').find((r) => r.key === 'explorer').label, 'Explorer');
   // Nothing that is not an https address becomes a row.
-  assert.deepEqual(channelRows({ explorer: 'http://mainnet.explore.swarm.green' }, 'swarm-mainnet'), []);
+  assert.deepEqual(channelRows({ explorer: 'http://explore.swarm.green' }, 'swarm-mainnet'), []);
   assert.deepEqual(channelRows(undefined, 'swarm-mainnet'), []);
 });

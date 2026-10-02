@@ -128,7 +128,11 @@ const PROFILES = [
     fundingAddressPrefix: 's3',
     coinsHaveValue: true,
     lightWalletHost: 'lwd-main.swarm.green',
-    explorerHost: 'mainnet.explore.swarm.green'
+    // Since 2026-09-28 the bare explore.swarm.green IS the mainnet explorer
+    // (mainnet.explore.swarm.green is its alias; the testnet one moved to
+    // testnet.explore.swarm.green). The relaunch brief names this host, and
+    // only this host, for explorer links.
+    explorerHost: 'explore.swarm.green'
   }
 ];
 
@@ -627,6 +631,111 @@ function dataDirFor(profile, settings, userDataDir) {
   return path.join(userDataDir, p.dataDirName);
 }
 
+// ----------------------------------------------------- one folder per chain
+//
+// SWARM mainnet was RESTARTED on 2 October 2026 from a new genesis block. A
+// node opened on the first chain's database is a wrong-chain node, and every
+// install of 0.2.0-mainnet.x kept that database in `chain-mainnet` (or in the
+// folder its owner moved it to, remembered as `dataDirMainnet`). So on a
+// production network the folder now belongs to the GENESIS, not only to the
+// profile: `chain-mainnet-<first 8 hex of the genesis>`, remembered per
+// genesis in `dataDirByGenesis`. The old folder is never reused, moved or
+// deleted; it simply stops being the one this build opens.
+
+function genesisKey(genesisHash) {
+  const g = String(genesisHash || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(g)) throw new ProfileError('a chain folder needs the genesis hash of its chain');
+  return g;
+}
+
+/**
+ * Where this chain's data lives.
+ * @param {object|string} profile
+ * @param {string} genesisHash  the genesis of the running definition
+ * @param {object} settings
+ * @param {string} userDataDir
+ */
+function chainDirFor(profile, genesisHash, settings, userDataDir) {
+  const p = requireProfile(profile.id || profile);
+  if (!p.production) return dataDirFor(p, settings, userDataDir);
+  const g = genesisKey(genesisHash);
+  const map = (settings && settings.dataDirByGenesis && typeof settings.dataDirByGenesis === 'object')
+    ? settings.dataDirByGenesis : {};
+  if (typeof map[g] === 'string' && map[g].length) return map[g];
+  return path.join(userDataDir, `${p.dataDirName}-${g.slice(0, 8)}`);
+}
+
+/** The settings change that remembers `dir` as this chain's folder. */
+function rememberChainDir(profile, genesisHash, settings, dir) {
+  const p = requireProfile(profile.id || profile);
+  if (!p.production) return { [p.dataDirSetting]: dir };
+  const g = genesisKey(genesisHash);
+  const prev = (settings && settings.dataDirByGenesis && typeof settings.dataDirByGenesis === 'object')
+    ? settings.dataDirByGenesis : {};
+  return { dataDirByGenesis: { ...prev, [g]: dir } };
+}
+
+/**
+ * The folder an EARLIER build used for this profile, when it is not the one
+ * this chain uses and it is still on disk. Only ever reported, never touched.
+ */
+function previousChainDir(profile, genesisHash, settings, userDataDir, exists = fs.existsSync) {
+  const p = requireProfile(profile.id || profile);
+  if (!p.production) return null;
+  const current = path.resolve(chainDirFor(p, genesisHash, settings, userDataDir));
+  const candidates = [];
+  if (settings && typeof settings[p.dataDirSetting] === 'string' && settings[p.dataDirSetting]) {
+    candidates.push(settings[p.dataDirSetting]);
+  }
+  candidates.push(path.join(userDataDir, p.dataDirName));
+  for (const c of candidates) {
+    if (path.resolve(c) === current) continue;
+    try { if (exists(c)) return c; } catch { /* not there */ }
+  }
+  return null;
+}
+
+// --------------------------------------------------------- closed start
+//
+// The embedded definition may carry `closed_start: {until: <ISO time>}`. While
+// it does, the node joins only through the private tunnel an access code opens
+// (access-code.js, tunnel.js) and never dials a public seed. A build whose
+// definition has no such entry behaves as the public app did, so the same code
+// serves the opening day.
+
+/** {active, until, untilText, reason} for the running definition. */
+function closedStartOf(manifest) {
+  const c = manifest && manifest.closed_start;
+  if (!c || typeof c !== 'object') return { active: false, until: null, untilText: null, reason: null };
+  const until = typeof c.until === 'string' && !Number.isNaN(Date.parse(c.until)) ? c.until : null;
+  if (!until) throw new ProfileError('closed_start in this definition has no valid "until" time');
+  const d = new Date(until);
+  const untilText = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  return {
+    active: true,
+    until,
+    untilText,
+    reason: `The network is in its closed start until ${untilText}. This computer needs an access code from the SWARM team.`
+  };
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+  'September', 'October', 'November', 'December'];
+
+/** {date, dateText, previousGenesis, sentence} when the definition records a relaunch. */
+function relaunchOf(manifest) {
+  const r = manifest && manifest.relaunch;
+  if (!r || typeof r !== 'object' || typeof r.date !== 'string' || Number.isNaN(Date.parse(r.date))) return null;
+  const d = new Date(r.date);
+  const dateText = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  return {
+    date: r.date,
+    dateText,
+    previousGenesis: typeof r.previous_genesis === 'string' ? r.previous_genesis : null,
+    sentence: `The SWARM network was restarted on ${dateText} from a new first block, so this app keeps a new chain folder and leaves the old one untouched.`
+  };
+}
+
 module.exports = {
   PROFILES,
   DEFAULT_PROFILE_ID,
@@ -653,5 +762,10 @@ module.exports = {
   chooseStartProfile,
   payoutBelongsTo,
   dataDirFor,
+  chainDirFor,
+  rememberChainDir,
+  previousChainDir,
+  closedStartOf,
+  relaunchOf,
   swarmSlot
 };

@@ -30,13 +30,15 @@ test('every network profile the app knows has a block of pins', () => {
 test('each profile pins both binaries on all four platforms, by SHA-256', () => {
   for (const [id, profile] of Object.entries(pins.profiles)) {
     assert.deepEqual(Object.keys(profile.platforms).sort(), [...PLATFORMS].sort(), `${id} platforms`);
-    assert.ok(profile.tag, `${id} has no release tag`);
+    // A release tag, or - for the relaunch tools, which are private workflow
+    // artifacts of the repository the build runs in - the run that made them.
+    assert.ok(profile.tag || (profile.layout === 'run-artifact' && /^\d+$/.test(String(profile.run_id))), `${id} has no release tag or run`);
     for (const key of PLATFORMS) {
       const pin = profile.platforms[key];
       assert.match(pin.node_sha, HEX64, `${id}/${key} node_sha`);
       assert.match(pin.miner_sha, HEX64, `${id}/${key} miner_sha`);
       assert.notEqual(pin.node_sha, pin.miner_sha, `${id}/${key}: node and miner cannot be the same file`);
-      if (profile.layout === 'archive') {
+      if (profile.layout === 'archive' || profile.layout === 'run-artifact') {
         assert.ok(pin.archive, `${id}/${key} has no archive name`);
         assert.match(pin.archive_sha, HEX64, `${id}/${key} archive_sha`);
       } else {
@@ -59,23 +61,45 @@ test('no placeholder survives in a pinned profile', () => {
 test('mainnet and testnet never share a binary', () => {
   const testnet = pins.profiles['swarm-testnet'];
   const mainnet = pins.profiles['swarm-mainnet'];
-  assert.notEqual(testnet.tag, mainnet.tag);
+  assert.notEqual(testnet.tag, mainnet.tag || `run-${mainnet.run_id}`);
   for (const key of PLATFORMS) {
     assert.notEqual(mainnet.platforms[key].node_sha, testnet.platforms[key].node_sha, `${key} zebrad`);
     assert.notEqual(mainnet.platforms[key].miner_sha, testnet.platforms[key].miner_sha, `${key} privacy-miner`);
   }
 });
 
-// The mainnet tools come from the public privacy-zebra repository on purpose:
-// a build of this PRIVATE repository can read a public release asset with no
-// cross-repository token, which is the whole reason the testnet tools had to
-// be re-hosted here in the first place.
-test('the mainnet pins name their source, and it is the public tool repository', () => {
+// The RELAUNCH tools (2026-10-02) are not published anywhere: they are the
+// workflow artifacts of a private run in the same private repository the app
+// is built in, so the run's own token can read them. Swarm-Official, where the
+// first mainnet's tools were released, is suspended. The pins must name that
+// run, and the source commit it built.
+test('the mainnet pins name their source: the private relaunch run', () => {
   const mainnet = pins.profiles['swarm-mainnet'];
-  assert.equal(mainnet.repo, 'Swarm-Official/privacy-zebra');
-  assert.equal(mainnet.layout, 'archive');
-  assert.match(mainnet.source_commit, /^[0-9a-f]{7,40}$/);
-  assert.match(mainnet.source_workflow_run, /^https:\/\/github\.com\/Swarm-Official\/privacy-zebra\/actions\/runs\/\d+$/);
+  assert.equal(mainnet.repo, 'louisinthesubway/swarm-evm-node');
+  assert.equal(mainnet.layout, 'run-artifact');
+  assert.match(String(mainnet.run_id), /^\d+$/);
+  assert.match(mainnet.source_commit, /^[0-9a-f]{40}$/);
+  assert.equal(mainnet.source_workflow_run, `https://github.com/louisinthesubway/swarm-evm-node/actions/runs/${mainnet.run_id}`);
+  for (const key of PLATFORMS) assert.ok(mainnet.platforms[key].artifact, `${key} names no artifact`);
+});
+
+// The closed-start tunnel is pinned per platform once the run that built it
+// is known: an empty pin means "not built yet", never "anything goes".
+test('the tunnel pins are either complete or empty, never half', () => {
+  const mainnet = pins.profiles['swarm-mainnet'];
+  assert.equal(mainnet.tunnel.program, 'onetun');
+  assert.match(mainnet.tunnel.tag_commit, /^[0-9a-f]{40}$/);
+  for (const key of PLATFORMS) {
+    const pin = mainnet.platforms[key];
+    if (pin.tunnel_sha) {
+      assert.match(pin.tunnel_sha, HEX64, `${key} tunnel_sha`);
+      assert.match(String(pin.tunnel_run), /^\d+$/, `${key} tunnel_run`);
+      assert.ok(pin.tunnel_artifact, `${key} tunnel_artifact`);
+      for (const other of [pin.node_sha, pin.miner_sha]) assert.notEqual(pin.tunnel_sha, other);
+    } else {
+      assert.ok(!pin.tunnel_run, `${key} has a tunnel run but no hash`);
+    }
+  }
 });
 
 test('no key tool is ever named as something to place', () => {

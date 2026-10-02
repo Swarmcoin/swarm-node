@@ -30,12 +30,16 @@ const { unpackedPath } = require('./graceful-stop');
 // raw binaries in resources/bin still runs.
 const BIN_NAMES = {
   zebrad: process.platform === 'win32' ? 'swarm-node-daemon.exe' : 'swarm-node-daemon',
-  miner: process.platform === 'win32' ? 'swarm-miner.exe' : 'swarm-miner'
+  miner: process.platform === 'win32' ? 'swarm-miner.exe' : 'swarm-miner',
+  // The closed-start tunnel: onetun, a user-space WireGuard port forwarder,
+  // built from source at a pinned release. See electron/chain/tunnel.js.
+  tunnel: process.platform === 'win32' ? 'swarm-tunnel.exe' : 'swarm-tunnel'
 };
 
 const LEGACY_BIN_NAMES = {
   zebrad: process.platform === 'win32' ? 'zebrad.exe' : 'zebrad',
-  miner: process.platform === 'win32' ? 'privacy-miner.exe' : 'privacy-miner'
+  miner: process.platform === 'win32' ? 'privacy-miner.exe' : 'privacy-miner',
+  tunnel: process.platform === 'win32' ? 'onetun.exe' : 'onetun'
 };
 
 function sha256File(file) {
@@ -89,7 +93,7 @@ function loadBaseline() {
 
 /**
  * Find and verify a bundled binary.
- * @param {'zebrad'|'miner'} kind
+ * @param {'zebrad'|'miner'|'tunnel'} kind
  * @returns {{ok:boolean, path:string|null, sha256:string|null, expected:string|null, reason:string}}
  */
 function resolveBinary(kind, { baseline = loadBaseline() } = {}) {

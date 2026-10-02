@@ -70,6 +70,14 @@ contextBridge.exposeInMainWorld('shell', {
   clearMapCity: () => invoke('shell:clearMapCity')
 });
 
+// The closed-start access code. The window hands a pasted code over and gets
+// back the machine name it was made for; it can never read a stored code.
+contextBridge.exposeInMainWorld('access', {
+  status: () => invoke('access:status'),
+  set: (code) => invoke('access:set', typeof code === 'string' ? code : ''),
+  remove: () => invoke('access:remove')
+});
+
 // The code lock and signing out. Both were asked for by name by the owner; the
 // rules they follow are in specs/WALLET.md ("Session: lock and sign out"). The
 // code is compared in the main process — this bridge cannot see the stored

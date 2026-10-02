@@ -123,8 +123,64 @@ const MAINNET_MINER = {
   binary: 'privacy-miner'
 };
 
+// ---- the RELAUNCH node and miner (tools N1), 2026-10-02 ----
+//
+// louisinthesubway/swarm-evm-node relaunch/n1-stale-tip 34c5baa03, which is
+// the reviewed node fix 6cc3fa82e plus one CI-only workflow commit, built by
+// the PRIVATE run 37026735396. Two things changed from cc1a192a7: nothing in
+// consensus, and on Network::SwarmMain getblocktemplate no longer refuses a
+// template only because the tip is older than 100 block spacings, so a chain
+// that stalled can restart. The hashes are the ones that run printed (its
+// SHA256SUMS, kept at D:/privacy/.runtime/swarm-mainnet/tools-n1 on the
+// planner's PC) and the same values build/binary-pins.json enforces before
+// this script ever sees a file.
+const N1 = {
+  repository: 'louisinthesubway/swarm-evm-node (private)',
+  branch: 'relaunch/n1-stale-tip',
+  commit: '34c5baa034fd93c237a1f05771ef01f17d5ef742',
+  reviewed_source: '6cc3fa82e799dbdbeb6d7c6864942ddf0899f978',
+  workflow_run: 'https://github.com/louisinthesubway/swarm-evm-node/actions/runs/37026735396',
+  built_at_utc: '2026-10-02',
+  upstream_base: 'tag v6.3.0, the official Zcash Foundation release',
+  network: 'SwarmMainnet'
+};
+const N1_NODE = {
+  ...MAINNET_NODE,
+  ...N1,
+  release: 'none (private workflow artifact)',
+  changes_vs_upstream:
+    MAINNET_NODE.changes_vs_upstream +
+    ' Relaunch fix (6cc3fa82e): on SwarmMain, getblocktemplate no longer refuses a template only ' +
+    'because the tip is older than 100 block spacings; which blocks are valid is unchanged.',
+  binary: 'zebrad'
+};
+const N1_MINER = { ...MAINNET_MINER, ...N1, release: 'none (private workflow artifact)', binary: 'privacy-miner' };
+
+// The closed-start tunnel. Not a SWARM program: onetun by Aram Peres (MIT),
+// built from its own tag with --locked by this repository's workflow. It moves
+// TCP bytes through a WireGuard tunnel and knows nothing of the chain.
+const ONETUN = {
+  role: 'the closed-start tunnel (user-space WireGuard port forwarder)',
+  repository: 'aramperes/onetun',
+  branch: 'tag v0.3.10',
+  commit: '89c3b59610d4b0f376f481af9010479929f06410',
+  upstream_base: 'onetun v0.3.10, unmodified (MIT licence)',
+  changes_vs_upstream: 'none: built from the release tag with cargo build --locked --release',
+  build: 'cargo build --locked --release',
+  binary: 'onetun'
+};
+
 // Platform builds are identified by the bytes CI verified.
 const VERIFIED_BUILDS = {
+  "10eb5f9659de004aee5a6fea7062dd9f6659c032407b0c701be3778bb1d46974": { ...N1_NODE, "target": "x86_64-pc-windows-msvc" },
+  "3980b4b366f034909c14fde1b6e992e282bfc9197cba7b1e7de4f754866bbde5": { ...N1_NODE, "target": "x86_64-unknown-linux-gnu" },
+  "f50e0c432876ba2c542c7cf4ecf78860ae67696acf5e1c83a737de3f478c809f": { ...N1_NODE, "target": "aarch64-apple-darwin" },
+  "5db0c17e044c1d92e1bf9a04e1936c5b218889e42fe1220f073d7c822da82423": { ...N1_NODE, "target": "x86_64-apple-darwin" },
+  "cf5a6b13a810676fa095181289c391920d89a9989837caa3f94c4a6697d1d9fa": { ...N1_MINER, "target": "x86_64-pc-windows-msvc" },
+  "d157bb76c24fa6c4a2c54108955204adf414daa225064a5b29d7c47a4fb12fc8": { ...N1_MINER, "target": "x86_64-unknown-linux-gnu" },
+  "cd4a4717edaf18300ca5517b6856b3e12f6156c7a208f625f35f5bd585dd42c8": { ...N1_MINER, "target": "aarch64-apple-darwin" },
+  "82525397386c31b66826693e5bc933a394da57940118bc2235cdd0ac8b40cbdf": { ...N1_MINER, "target": "x86_64-apple-darwin" },
+
   "e3c012c54406ba9bf9a661b111440bade33a9fafec0611341673508d70629b68": {
     "branch": "codex/intel-miner-ci",
     "commit": "75da596ea680011c24230e558d78f9c70221bcf2",
@@ -200,8 +256,24 @@ const VERIFIED_BUILDS = {
 // the pin is recorded under the name that actually ships.
 const WANT = {
   zebrad: { file: `swarm-node-daemon${exe}`, legacy: `zebrad${exe}`, required: true },
-  miner: { file: `swarm-miner${exe}`, legacy: `privacy-miner${exe}`, required: false }
+  miner: { file: `swarm-miner${exe}`, legacy: `privacy-miner${exe}`, required: false },
+  // Required with --require-tunnel, which a closed-start build passes: such a
+  // build cannot connect at all without it.
+  tunnel: { file: `swarm-tunnel${exe}`, legacy: `onetun${exe}`, required: process.argv.includes('--require-tunnel') }
 };
+
+// The tunnel's hash must be the one build/binary-pins.json pins for this
+// platform: it is not in VERIFIED_BUILDS because each source build of it has
+// its own bytes, and the pin records which run's bytes were reviewed.
+function pinnedTunnelSha() {
+  try {
+    const pins = JSON.parse(fs.readFileSync(path.join(ROOT, 'build', 'binary-pins.json'), 'utf8'));
+    const keyMap = { 'win32-x64': 'win-x64', 'linux-x64': 'linux-x64', 'darwin-arm64': 'darwin-arm64', 'darwin-x64': 'darwin-x64' };
+    const prof = pins.profiles[process.env.SWARM_NETWORK_PROFILE || pins.default_profile] || {};
+    const plat = (prof.platforms || {})[keyMap[`${process.platform}-${process.arch}`]] || {};
+    return { sha: plat.tunnel_sha || null, run: plat.tunnel_run || null };
+  } catch { return { sha: null, run: null }; }
+}
 
 // Things that must never be shipped inside the app, whatever ends up in the
 // staging folder. The key tool can create spending keys; a user-facing miner
@@ -261,7 +333,15 @@ for (const [name, spec] of Object.entries(WANT)) {
   if (name === 'zebrad' && VERIFIED_BUILDS[sha256]?.binary !== 'zebrad') {
     throw new Error(`Unreviewed node binary: ${sha256}`);
   }
-  const provenance = { ...PROVENANCE[name], ...VERIFIED_BUILDS[sha256] };
+  let provenance = { ...PROVENANCE[name], ...VERIFIED_BUILDS[sha256] };
+  if (name === 'tunnel') {
+    const pin = pinnedTunnelSha();
+    if (pin.sha !== sha256) throw new Error(`Unpinned tunnel binary: ${sha256} (build/binary-pins.json pins ${pin.sha || 'nothing'})`);
+    provenance = {
+      ...ONETUN,
+      workflow_run: pin.run ? `https://github.com/louisinthesubway/swarm-evm-node/actions/runs/${pin.run}` : null
+    };
+  }
   mine[name] = { file: spec.file, sha256, bytes: buf.length, ...provenance };
   console.log(`${name.padEnd(7)} ${spec.file.padEnd(20)} ${sha256}  ${buf.length} bytes`);
   console.log(`        ${provenance.branch} @ ${provenance.commit.slice(0, 12)}`);

@@ -114,7 +114,10 @@ class RewardLedger {
       paidZat: mode === 'transparent' ? b.paidZat : null,
       subsidyZat: Number.isInteger(b.subsidyZat) ? b.subsidyZat : null,
       minerSubsidyZat: Number.isInteger(b.minerSubsidyZat) ? b.minerSubsidyZat : null,
-      firstSeen: prev ? prev.firstSeen : Date.now()
+      firstSeen: prev ? prev.firstSeen : (Number.isFinite(b.firstSeen) ? b.firstSeen : Date.now()),
+      // Replaced by another block at the same height: kept in the list so the
+      // history is honest, never counted in any total.
+      orphaned: prev ? prev.orphaned === true : b.orphaned === true
     });
     return this.blocks.get(b.hash);
   }
@@ -155,8 +158,18 @@ class RewardLedger {
     let transparentBlocks = 0;
     let shieldedBlocks = 0;
     let nextMaturesInBlocks = null;
+    let counted = 0;
+    let orphanedBlocks = 0;
+    let lastFoundAt = null;
+    let lastFoundHeight = null;
 
     for (const b of this.blocks.values()) {
+      if (b.orphaned === true) { orphanedBlocks += 1; continue; }
+      counted += 1;
+      // When this computer found it: the block's own time when the chain told
+      // us, otherwise the moment the node reported it.
+      const at = Number.isFinite(b.time) && b.time ? b.time * 1000 : b.firstSeen;
+      if (Number.isFinite(at) && (lastFoundAt == null || at > lastFoundAt)) { lastFoundAt = at; lastFoundHeight = b.height; }
       const mature = isMature(b.height, tipHeight, this.maturity);
       if (b.mode === 'transparent') {
         transparentBlocks += 1;
@@ -178,7 +191,10 @@ class RewardLedger {
     }
 
     return {
-      blocksFound: this.blocks.size,
+      blocksFound: counted,
+      orphanedBlocks,
+      lastFoundAt,
+      lastFoundHeight,
       transparentBlocks,
       shieldedBlocks,
       spendableZat,

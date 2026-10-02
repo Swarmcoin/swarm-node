@@ -50,48 +50,74 @@
     },
     "swarm-mainnet": {
       "label": "SWARM mainnet",
-      "repo": "Swarm-Official/privacy-zebra",
-      "repo_note": "privacy-zebra is PUBLIC, so its release assets are readable from a build of this private repository with no cross-repository token. The mainnet tools are published there, next to the source they were built from, as one archive per platform.",
-      "tag": "vendored-binaries-mainnet-3",
-      "layout": "archive",
-      "source_repo": "Swarm-Official/privacy-zebra",
-      "source_branch": "codex/mainnet-ci-20260926",
-      "source_commit": "5f6c19488b654cc7d3e92c5686c0346df4f04ba1",
-      "source_tree_of": "the mainnet integration HEAD cc1a192a7 plus the workflow file; cc1a192a7 is 01b9da3de plus the three commits that let the node's own miner run more than one Equihash solver (bd32e36ac, c6ca4994e formatting, cc1a192a7 the zebra-rpc test fixtures)",
-      "source_workflow_run": "https://github.com/Swarm-Official/privacy-zebra/actions/runs/36286408819",
+      "repo": "louisinthesubway/swarm-evm-node",
+      "repo_note": "The relaunch node tools (N1) are PRIVATE workflow artifacts of louisinthesubway/swarm-evm-node run 37026735396, the same private repository this build runs in, so the run token reads them. Nothing is published. The archive and member hashes below are the ones that run printed (D:/privacy/.runtime/swarm-mainnet/tools-n1/SHA256SUMS).",
+      "layout": "run-artifact",
+      "run_id": "37026735396",
+      "source_repo": "louisinthesubway/swarm-evm-node",
+      "source_branch": "relaunch/n1-stale-tip",
+      "source_commit": "34c5baa034fd93c237a1f05771ef01f17d5ef742",
+      "source_tree_of": "reviewed node fix 6cc3fa82e799dbdbeb6d7c6864942ddf0899f978 (multi-thread internal miner + SwarmMain stale-tip template fix) plus one CI-only commit (.github/workflows/swarm-binaries.yml)",
+      "source_workflow_run": "https://github.com/louisinthesubway/swarm-evm-node/actions/runs/37026735396",
+      "previous": "replaced vendored-binaries-mainnet-3 (5f6c19488b654cc7d3e92c5686c0346df4f04ba1) for the relaunch of 2026-10-02",
       "requires": "A zebrad built with Network::SwarmMain, from privacy-zebra 16c6a210f or later. An older zebrad rejects [network.swarm_main] while deserialising its configuration, and one older than 16c6a210f also rejects the `initial_swarm_main_peers` key this app writes under [network] - without which a node cannot be pointed at seed-main.swarm.green at all. Shielded mining on more than one core additionally needs bd32e36ac or later: an older zebrad does not know `[mining] internal_miner_threads`. See docs/NETWORK-PROFILES.md.",
+      "tunnel": {
+        "program": "onetun",
+        "upstream": "https://github.com/aramperes/onetun",
+        "tag": "v0.3.10",
+        "tag_commit": "89c3b59610d4b0f376f481af9010479929f06410",
+        "licence": "MIT",
+        "build": "cargo build --locked --release (from the tag, in this repository's workflow)",
+        "note": "tunnel_sha is filled in from the run that built it (tunnel_run); a platform without one is not packaged."
+      },
       "platforms": {
         "win-x64": {
+          "artifact": "swarm-tools-x86_64-pc-windows-msvc",
           "archive": "swarm-tools-v6.3.0-x86_64-pc-windows-msvc.zip",
-          "archive_sha": "2aa040a31464c91a97dbe616a8e38a8abbd1c3d2cd29ea89a90ff8ca2fb6c1bd",
+          "archive_sha": "f457ba1f4e16d547f37f6bbb1faad590465090d9fa72668ed71bec31f445cd34",
           "node_member": "zebrad.exe",
-          "node_sha": "94d14bb089cd0e84cbdb5954e1505fae639fc7e076d6b0e8ce3604a4433b6c8b",
+          "node_sha": "10eb5f9659de004aee5a6fea7062dd9f6659c032407b0c701be3778bb1d46974",
           "miner_member": "privacy-miner.exe",
-          "miner_sha": "02dc041f2e83f09f1182a473a718c36ddc37ecdeb6b5abecc1707c42beec982c"
+          "miner_sha": "cf5a6b13a810676fa095181289c391920d89a9989837caa3f94c4a6697d1d9fa",
+          "tunnel_run": "",
+          "tunnel_artifact": "onetun-x86_64-pc-windows-msvc",
+          "tunnel_sha": ""
         },
         "linux-x64": {
+          "artifact": "swarm-tools-x86_64-unknown-linux-gnu",
           "archive": "swarm-tools-v6.3.0-x86_64-unknown-linux-gnu.tar.gz",
-          "archive_sha": "3ff5dcdb34ba7df95e9405a3d50c1fa8d9b8988a6ffcbfdece4f91bdf22f62c5",
+          "archive_sha": "c61848273becb86f7e385a93627639a7f5494dadd818e8bebfc203dba73e7db2",
           "node_member": "zebrad",
-          "node_sha": "883a0a2e4d0fff7b820c001128b4a949258eb8c4e40f7a94f674410a56375816",
+          "node_sha": "3980b4b366f034909c14fde1b6e992e282bfc9197cba7b1e7de4f754866bbde5",
           "miner_member": "privacy-miner",
-          "miner_sha": "a7b2dac064e062ef90b4e0917010c24938af17984c1968570bdb9454d36359cb"
+          "miner_sha": "d157bb76c24fa6c4a2c54108955204adf414daa225064a5b29d7c47a4fb12fc8",
+          "tunnel_run": "",
+          "tunnel_artifact": "onetun-x86_64-unknown-linux-gnu",
+          "tunnel_sha": ""
         },
         "darwin-arm64": {
+          "artifact": "swarm-tools-aarch64-apple-darwin",
           "archive": "swarm-tools-v6.3.0-aarch64-apple-darwin.tar.gz",
-          "archive_sha": "8c9dd24d710e34eb0b508005bbe4e561aad0ddec4fd6e881e685d1ad42a283cc",
+          "archive_sha": "c3716567bbcb93fccb4a38552b22fe0b02f1941ea0ce179b9234382adc21ad79",
           "node_member": "zebrad",
-          "node_sha": "66eac849301d6c31ada89fa75d75bcb53ec04b4e9903e7d298f0c3d8eec7fd48",
+          "node_sha": "f50e0c432876ba2c542c7cf4ecf78860ae67696acf5e1c83a737de3f478c809f",
           "miner_member": "privacy-miner",
-          "miner_sha": "7f6271a9cde8d701202780818d0a80a36294573194171a8b69bff481feeaee7b"
+          "miner_sha": "cd4a4717edaf18300ca5517b6856b3e12f6156c7a208f625f35f5bd585dd42c8",
+          "tunnel_run": "",
+          "tunnel_artifact": "onetun-aarch64-apple-darwin",
+          "tunnel_sha": ""
         },
         "darwin-x64": {
+          "artifact": "swarm-tools-x86_64-apple-darwin",
           "archive": "swarm-tools-v6.3.0-x86_64-apple-darwin.tar.gz",
-          "archive_sha": "38b8dac1749b43b134d539a1670f283f441bd9775fac5679d5196e5c15b5f275",
+          "archive_sha": "9b024c49d8ab8e808fd1911682e2437763ebe39795c3865bc0e280369190d6fc",
           "node_member": "zebrad",
-          "node_sha": "5e4a91589c3b293f9ffe126f21d4463ea76c14418f9d37de52a3258f6c3fa90b",
+          "node_sha": "5db0c17e044c1d92e1bf9a04e1936c5b218889e42fe1220f073d7c822da82423",
           "miner_member": "privacy-miner",
-          "miner_sha": "8d0f00fd9df8eeb3e525bf9420046510828ad05a36548c6440671c76f5bd8c34"
+          "miner_sha": "82525397386c31b66826693e5bc933a394da57940118bc2235cdd0ac8b40cbdf",
+          "tunnel_run": "",
+          "tunnel_artifact": "onetun-x86_64-apple-darwin",
+          "tunnel_sha": ""
         }
       }
     }

@@ -204,6 +204,23 @@ function generateSwarmMainConfig(manifest, opts, profile) {
     if (!byslot.has(slot)) throw new ConfigError(`the SWARM mainnet definition has no ${slot} destination`);
   }
 
+  // CLOSED START. The node's one peer is the tunnel this app runs on this
+  // computer (electron/chain/tunnel.js), so every peer must be a loopback
+  // address and the node itself listens on loopback only: nothing outside this
+  // computer can reach it, and it never dials a public seed. The tunnel key is
+  // not a node setting and can never appear in this file.
+  const closed = opts.closedStart === true;
+  if (closed) {
+    if (!Array.isArray(opts.seedPeers) || opts.seedPeers.length !== 1) {
+      throw new ConfigError('closed start: the node needs exactly one peer, the local tunnel');
+    }
+    if (!/^127\.0\.0\.1:\d{1,5}$/.test(String(opts.seedPeers[0]))) {
+      throw new ConfigError('closed start: the node\'s only peer must be the tunnel on 127.0.0.1');
+    }
+    if (!/^127\.0\.0\.1:\d{1,5}$/.test(p2pListen)) {
+      throw new ConfigError('closed start: the node must listen on 127.0.0.1 only');
+    }
+  }
   const seeds = (opts.seedPeers == null ? manifest.seed_peers || [] : opts.seedPeers).map(checkPeer);
 
   const L = [];
@@ -212,6 +229,10 @@ function generateSwarmMainConfig(manifest, opts, profile) {
   L.push('# Do not edit by hand: the app rewrites this file on every start.');
   L.push('# SwarmMainnet is SWARM\'s own production network. It is not upstream Zcash:');
   L.push('# different magic (SWMN), different genesis, different transaction domain.');
+  if (closed) {
+    L.push('# CLOSED START: the only peer is the private tunnel SWARM Node runs on this');
+    L.push('# computer; the node listens on loopback and keeps no peer cache.');
+  }
   L.push('');
 
   L.push('[network]');
@@ -223,6 +244,12 @@ function generateSwarmMainConfig(manifest, opts, profile) {
   L.push('initial_testnet_peers = []');
   if (seeds.length) L.push(`initial_swarm_main_peers = [${seeds.map(tomlString).join(', ')}]`);
   L.push('cache_dir = false');
+  if (closed) {
+    // As the closed-start miner kits had it: one connection per address, and
+    // no attempt to fill a peer set of 25 from a network of a handful.
+    L.push('max_connections_per_ip = 1');
+    L.push('peerset_initial_target_size = 2');
+  }
   L.push('');
 
   L.push('# The only values this file supplies. Everything else about');

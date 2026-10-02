@@ -11,6 +11,7 @@ import { MiningView, NodeView, RewardsView, SettingsView, LogView } from './dash
 import { MapView } from './map.jsx';
 import { Tour } from './tour.jsx';
 import { LockScreen } from './lock.jsx';
+import { AccessCodeCard } from './access.jsx';
 
 const TABS = [
   ['mining', 'Mining', 'mine'],
@@ -186,17 +187,41 @@ export default function App() {
           <NetworkStrip network={state.network} compact />
           <div className="content center">
             {screen === 'welcome' ? (
-              <Welcome network={cfg.network} chain={state.network} onNext={() => setScreen('consent')} />
+              <Welcome network={cfg.network} chain={state.network} closed={!!(state.access && state.access.required)} onNext={() => setScreen('consent')} />
             ) : null}
             {screen === 'consent' ? (
               <Consent
                 chain={state.network}
                 onBack={() => setScreen('welcome')}
-                onAccept={async () => { await window.shell.setConsent(true); setCfg(await window.shell.getConfig()); setScreen('payout'); }}
+                onAccept={async () => {
+                  await window.shell.setConsent(true);
+                  setCfg(await window.shell.getConfig());
+                  // During the closed start the code comes first: without it
+                  // nothing after this screen can connect.
+                  setScreen(state.access && state.access.required ? 'access' : 'payout');
+                }}
               />
             ) : null}
+            {screen === 'access' ? (
+              <div className="setup">
+                <div className="kicker">Before you start · access code</div>
+                <h1 style={{ margin: '10px 0 8px' }}>Paste your access code</h1>
+                <p className="muted">{state.access && state.access.reason}</p>
+                <AccessCodeCard s={state} compact onChanged={api.refreshConfig} />
+                <div className="row" style={{ marginTop: 24 }}>
+                  <button className="btn ghost" onClick={() => setScreen('consent')}>Back</button>
+                  <div className="spacer" />
+                  <button className="btn primary" disabled={!(state.access && state.access.present)} onClick={() => setScreen('payout')}>Next</button>
+                </div>
+              </div>
+            ) : null}
             {screen === 'payout' ? (
-              <Payout state={state} api={api} onBack={() => setScreen('consent')} onNext={() => setScreen('check')} />
+              <Payout
+                state={state}
+                api={api}
+                onBack={() => setScreen(state.access && state.access.required ? 'access' : 'consent')}
+                onNext={() => setScreen('check')}
+              />
             ) : null}
             {screen === 'check' ? (
               <MachineCheck

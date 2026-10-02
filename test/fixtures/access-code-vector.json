@@ -1,0 +1,13 @@
+{
+  "note": "Produced by scripts/swarm/closed/make_access_code.py (project repository) from fixed fake keys; the app must read it identically.",
+  "code": "SWARMKEY1.eyJ2IjoxLCJuIjoidGVzdC12ZWN0b3IiLCJrIjoiQVFJREJBVUdCd2dKQ2dzTURRNFBFQkVTRXhRVkZoY1lHUm9iSEIwZUh5QT0iLCJhIjoiMTAuODguMC4yNTAiLCJzIjoiWldabmFHbHFhMnh0Ym05d2NYSnpkSFYyZDNoNWVudDhmWDUvZ0lHQ2c0UT0iLCJlIjoiMjAzLjAuMTEzLjc6NTE4MjAiLCJwIjoiMTAuODguMC4xOjI4MjMzIn0.f300dc1e",
+  "payload": {
+    "v": 1,
+    "n": "test-vector",
+    "k": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+    "a": "10.88.0.250",
+    "s": "ZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4Q=",
+    "e": "203.0.113.7:51820",
+    "p": "10.88.0.1:28233"
+  }
+}

@@ -1,3 +1,67 @@
+# SWARM Node 0.3.0-mainnet.1 (closed start)
+
+For the SWARM mainnet that was **restarted on 2 October 2026** from a new first
+block (genesis `01b76d8a…`). Until 23 October 2026 the network is in its
+**closed start**: only computers with an access code from the SWARM team can
+join. Windows x64, macOS on Apple silicon and on Intel, and Linux x64.
+
+**Not published.** This build is for the owner's own machines first.
+
+---
+
+## What changed since 0.2.0-mainnet.6
+
+**One access code, nothing else to install.** Paste the code you were given
+once, in the app. It is checked on your computer, kept with your computer's
+own protected storage, and never shown again: the app only says "Access code
+accepted for <your machine>". There is no WireGuard program to install and no
+administrator rights to give. The app runs the private connection to the SWARM
+server itself, and stops it when you stop the node or close the app. One
+button, **Remove access code**, takes it away again; after that this computer
+cannot connect.
+
+**"Are we up?" on the Mining page.** One card, readable at a glance:
+
+- **Network** — whether the SWARM network is producing blocks, its newest
+  block and how long ago it was made, read from the SWARM status page. This
+  tells you the chain is up even when your computer finds nothing.
+- **Tunnel** — connected, with the time of the last handshake, or "no
+  connection to the SWARM server".
+- **Your node** — its block against the network's, and its peers.
+- **Mining** — your computer's rate and how many threads it uses.
+- **Found by this computer** — how many blocks, when the last one was found,
+  and what they pay. For a shielded `swm1…` address the chain hides the
+  amounts, so the app shows the blocks it found times the miner's 5 SWM, and
+  says so: that is not your wallet balance. The list is kept, so it survives a
+  restart of the app, and a block that was later replaced by another miner's
+  block at the same height is shown but no longer counted.
+
+A dash means the app does not know yet. Nothing is estimated.
+
+**A new chain folder for the new chain.** The app keeps the restarted chain in
+its own folder (`chain-mainnet-01b76d8a`) and leaves the old chain's folder
+exactly where it was: nothing is moved or deleted.
+
+**The node program is the relaunch build** (privacy-zebra fix 6cc3fa82e): the
+node's own miner runs on as many cores as you choose, and a chain that stood
+still for more than two hours can start producing blocks again. The app still
+refuses to start any node program whose SHA-256 it was not built with, and now
+checks the tunnel program the same way.
+
+**Explorer links go to explore.swarm.green**, the SWARM mainnet explorer.
+
+## How the private connection works (for the curious)
+
+The code carries this computer's own key for a WireGuard tunnel to the SWARM
+server. The app starts a small bundled program, onetun (open source, MIT,
+built from its published source by the SWARM build), which listens on this
+computer only (127.0.0.1) and carries the node's one connection through the
+tunnel. The key is handed to it in its environment, never on a command line
+and never in a file. The node's configuration names only that local port; the
+key never appears in it or in any log.
+
+---
+
 # SWARM Node 0.2.0-testnet.4
 
 A small Windows app that turns your computer into a full node of the SWARM test
