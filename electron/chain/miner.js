@@ -57,6 +57,9 @@ class MinerPool extends EventEmitter {
     this.args = null;
     this.acceptedHashes = new Set();
     this.rejected = 0;
+    // Wait before a worker that stopped by itself is started again.
+    this.respawnMs = cfg.respawnMs == null ? 10000 : cfg.respawnMs;
+    this.respawnTimers = new Map();
   }
 
   get available() { return this.simulate || !!this.binaryPath; }
@@ -156,8 +159,34 @@ class MinerPool extends EventEmitter {
       this.log(`[w${index}] exited${code == null ? '' : ` (code ${code})`}`, 'app');
       this.workers = this.workers.filter((x) => x !== w);
       this.emit('workerExit', { index, code, desired: this.desired });
+      this.scheduleRespawn(index);
     });
     return w;
+  }
+
+  /**
+   * A worker that stops on its own while mining is wanted is started again.
+   *
+   * privacy-miner exits on the first refused template. The node refuses one
+   * (RPC -10, "not synced") for a while after it has caught up with the tip,
+   * which is exactly when the app starts mining - the relaunch test of
+   * 2026-10-02 found the pool empty a second after "mining on", and nothing
+   * ever started it again. One worker slot, one timer, cancelled by stop().
+   */
+  scheduleRespawn(index) {
+    if (this.simulate || this.desired <= index) return false;
+    if (!this.respawnTimers) this.respawnTimers = new Map();
+    if (this.respawnTimers.has(index)) return false;
+    const t = setTimeout(() => {
+      this.respawnTimers.delete(index);
+      if (this.desired > index && !this.workers.some((x) => x.index === index)) {
+        this.log(`[w${index}] starting the worker again`, 'app');
+        this.spawnWorker(index).catch(() => {});
+      }
+    }, this.respawnMs == null ? 10000 : this.respawnMs);
+    if (t.unref) t.unref();
+    this.respawnTimers.set(index, t);
+    return true;
   }
 
   /** Change the number of workers without restarting the node or the others. */
@@ -186,6 +215,10 @@ class MinerPool extends EventEmitter {
   /** Stop every worker. Gracefully: the miner cancels on Ctrl+C. */
   async stop() {
     this.desired = 0;
+    if (this.respawnTimers) {
+      for (const t of this.respawnTimers.values()) clearTimeout(t);
+      this.respawnTimers.clear();
+    }
     const list = this.workers.slice();
     this.workers = [];
     const reports = [];
