@@ -105,7 +105,7 @@ fs.mkdirSync(staging, { recursive: true });
 fs.mkdirSync(dest, { recursive: true });
 
 console.log(`profile   ${profileId} (${profile.label})`);
-console.log(`release   ${repo} @ ${tag}`);
+console.log(`release   ${repo} @ ${tag || `workflow run ${profile.run_id}`}`);
 console.log(`platform  ${platformKey}  layout ${profile.layout}`);
 
 /** The two files that end up in resources/bin, and the hash each must have. */
